@@ -1,0 +1,584 @@
+\documentclass[11pt]{article}
+\usepackage[margin=0.9in]{geometry}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{amsmath}
+\usepackage{ragged2e}
+
+% Lenient line breaking for long \texttt strings.
+\emergencystretch=4em
+\tolerance=9999
+\hbadness=10000
+\sloppy
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  columns=fullflexible,
+  frame=single,
+  backgroundcolor=\color{gray!10},
+  showstringspaces=false
+}
+
+\newcolumntype{L}[1]{>{\RaggedRight\arraybackslash\hangindent=1em}p{#1}}
+\newcommand{\vc}{\textbf{very confident}}
+\newcommand{\gs}{\textbf{guessed}}
+\newcommand{\nc}{\textbf{will not guess}}
+\newcommand{\es}{\textsc{essential}}
+\newcommand{\nh}{\textsc{nice-to-have}}
+
+\title{COARDS Audit of \texttt{gradients\_by\_period/} on the URI OPeNDAP Server\\
+       \large grep-dap test case, Prompt \#3}
+\author{Compiled for P. Cornillon}
+\date{2026-05-16}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+This document does for the \texttt{gradients\_by\_period/} branch
+what Prompt~\#2 did for \texttt{SST\_Orbits/} --- with one major
+asymmetry. The orbit branch has CF-1.5--labelled metadata and the
+Prompt~\#2 audit was mostly a question of whether what is there is
+COARDS-correct. The gradient branch, by contrast, has
+\emph{zero} declared metadata: no global attributes, no variable
+attributes, no coordinate variables, no fill values, no units, no
+long names. Everything --- including the orientation of the lat
+and lon axes --- has to be inferred from the variable-name
+grammar, the data values themselves, and the companion branch.
+The audit accordingly groups each proposed attribute on two axes:
+\textbf{importance} (\es{} vs.\ \nh{}) and \textbf{confidence}
+(\vc{} / \gs{} / \nc{}). The six resulting buckets organize the
+rest of the document.
+\end{abstract}
+
+\tableofcontents
+
+\section{Background}
+
+The \texttt{gradients\_by\_period/} branch contains 270 NetCDF
+files, one per calendar month from January 2003 through December
+2024, named \texttt{augmented\_monthly\_stats\_MM\_YYYY.nc}. Each
+file declares exactly two dimensions
+(\texttt{lon=360}, \texttt{lat=180}) and 34 variables, all
+\texttt{Float64} of shape (\texttt{lon}, \texttt{lat}); the schema
+is identical across the period
+(\texttt{scripts/gradients\_dmr\_inventory.py}).
+
+The variable names follow a regular grammar:
+
+\begin{lstlisting}
+{day|night}_pixel_count                    # SST validity count
+{day|night}_as_pixel_count                 # along-scan gradient count
+{day|night}_at_pixel_count                 # along-track gradient count
+{day|night}_sum_SST[_squared]              # sum (and sum^2) of SST
+{day|night}_sum_eastward_gradient[_squared]
+{day|night}_sum_northward_gradient[_squared]
+{day|night}_sum_magnitude_gradient[_squared]
+{day|night}_sum_grad_as_per_km[_squared]
+{day|night}_sum_grad_at_per_km[_squared]
+{day|night}_sum_grad_mag_per_km[_squared]
+\end{lstlisting}
+
+That naming, plus the companion branch \texttt{SST\_Orbits/} (which
+\emph{is} CF-labelled and whose own
+\texttt{eastward\_gradient}/\texttt{northward\_gradient} variables
+have \texttt{units="C/km"} and
+\texttt{standard\_name="*\_temperature\_gradient"}), is the source
+of essentially every inference below.
+
+\section{What the data themselves disclose}\label{sec:data}
+
+The pre-audit probes establish the following facts that are needed
+later. (Scripts:
+\texttt{scripts/gradients\_geom\_resolve.py},
+\texttt{scripts/gradients\_signs\_test.py}.)
+
+\paragraph{Grid orientation.} The pixel-count field has a clear
+land/ocean pattern. Indexed against six known-land points (Sahara,
+Australia interior, Amazon, Central US, Greenland, Tibet) and six
+known-ocean points (Pacific centre, Atlantic centre, Indian
+Ocean, North Pacific, Persian Gulf, warm pool), only one of the
+four candidate conventions classifies all 12 correctly:
+\textbf{lat\_idx 0 = $-89.5^\circ$} (south--north), \textbf{lon\_idx
+0 = $-179.5^\circ$} ($-180\to+180$, cell-centered). The
+others place Australia under ocean indices, or Greenland under
+ocean indices, etc.
+
+\paragraph{Cell-centered $1^\circ$ grid.} Implied:
+\texttt{lat[k] = -89.5 + k} for $k\in[0,179]$,
+\texttt{lon[k] = -179.5 + k} for $k\in[0,359]$.
+
+\paragraph{Signs.} \texttt{eastward\_gradient},
+\texttt{northward\_gradient}, \texttt{grad\_as\_per\_km}, and
+\texttt{grad\_at\_per\_km} are signed (positive and negative sums
+observed). \texttt{magnitude\_gradient} and
+\texttt{grad\_mag\_per\_km} are strictly non-negative.
+
+\paragraph{Sum semantics.}
+\texttt{sum\_magnitude\_gradient} per cell is on average
+$\sim$12$\times$ larger than $\sqrt{S_e^2+S_n^2}$ from the same
+cell, so the magnitude sum is the sum of per-pixel magnitudes,
+\emph{not} the magnitude of the vector sum.
+
+\paragraph{Pixel counts.} \texttt{day\_pixel\_count} (mean 10\,030
+per cell) $\neq$ \texttt{day\_as\_pixel\_count} (mean 8\,110)
+$\neq$ \texttt{day\_at\_pixel\_count} (mean 4\,090). The
+$N_{\rm at} \approx \frac{1}{2}N_{\rm as}$ ratio is consistent with
+MODIS Aqua's 10-line scan structure, in which every tenth
+along-track derivative straddles a scan boundary and is masked.
+
+\paragraph{Divisor for the gradient magnitude.} The per-cell mean
+$\mathtt{sum\_grad\_mag\_per\_km}/\mathtt{at\_pixel\_count}$
+$\approx 0.044\,^\circ$C/km closely tracks the
+$\mathtt{sum\_magnitude\_gradient}/\mathtt{pixel\_count}$
+$\approx 0.046\,^\circ$C/km, while using \texttt{as\_pixel\_count}
+yields $\sim 0.022$. So
+\texttt{sum\_grad\_mag\_per\_km} pairs with
+\texttt{at\_pixel\_count} (the more restrictive of the two).
+
+\paragraph{Time.} No time variable exists in the file. The single
+calendar month each file represents must be derived from the
+filename (\texttt{MM\_YYYY}); $\texttt{time}_\text{center}$ would
+naturally be the mid-month UTC date as a CF-style
+\texttt{days since 1970-01-01 00:00:00 UTC}.
+
+\paragraph{Fill value.} Observed: NaN. Counts (\texttt{*\_pixel\_count})
+contain $0$ explicitly (over land) and \texttt{NaN} where the
+producer chose not to write a zero, so \texttt{NaN} is the
+appropriate \texttt{\_FillValue} for Float64 throughout.
+
+\section{Confidence $\times$ Importance: bucket summary}
+
+The buckets below contain the proposed metadata. They are listed
+once at the level of greatest generality (i.e.\ a rule that
+applies to many variables is stated once and not repeated).
+
+\subsection{\es{} -- \vc{}}\label{sec:es-vc}
+
+These should be added by anyone re-publishing the dataset, in the
+form below, before any consumer tool will accept the files.
+
+\begin{enumerate}
+  \item \textbf{Coordinate variables.} Add
+    \texttt{lat(180)} and \texttt{lon(360)} as one-dimensional
+    coordinate variables that share their names with the
+    dimensions, with values
+    \begin{quote}\ttfamily
+      lat = -89.5, -88.5, \ldots, +89.5 \\
+      lon = -179.5, -178.5, \ldots, +179.5
+    \end{quote}
+    and attributes
+    \begin{quote}\ttfamily
+      lat: units="degrees\_north", long\_name="Latitude",\\
+      \phantom{lat:}\ standard\_name="latitude", axis="Y";\\
+      lon: units="degrees\_east",  long\_name="Longitude",\\
+      \phantom{lon:}\ standard\_name="longitude", axis="X".
+    \end{quote}
+    The mapping is established by the geographic test in
+    \S\ref{sec:data}; the cell-centred placement is the standard
+    convention for a $1^\circ \times 1^\circ$ binning.
+
+  \item \textbf{Fill value on every Float64 variable.} The
+    appropriate value is \texttt{\_FillValue = NaN}; observed in
+    the data and consistent with the Float64 dtype.
+
+  \item \textbf{Units on count variables.}
+    \texttt{day\_pixel\_count}, \texttt{night\_pixel\_count},
+    \texttt{day\_as\_pixel\_count}, \texttt{night\_as\_pixel\_count},
+    \texttt{day\_at\_pixel\_count}, \texttt{night\_at\_pixel\_count}:
+    \texttt{units="1"} (CF-style dimensionless count).
+
+  \item \textbf{Units on SST sums.}
+    \texttt{day\_sum\_SST}, \texttt{night\_sum\_SST}:
+    \texttt{units="degree\_Celsius"} (inherited from the
+    \texttt{SST\_Orbits/SST\_In} unit). The corresponding
+    \texttt{*\_sum\_SST\_squared}: \texttt{units="degree\_Celsius2"}.
+
+  \item \textbf{Units on geographic gradient sums.}
+    \texttt{*\_sum\_eastward\_gradient},
+    \texttt{*\_sum\_northward\_gradient},
+    \texttt{*\_sum\_magnitude\_gradient}:
+    \texttt{units="degree\_Celsius km-1"}. Squared variants:
+    \texttt{units="degree\_Celsius2 km-2"}. Inherited from
+    \texttt{SST\_Orbits/eastward\_gradient} (declared as
+    \texttt{C/km}; the substitution
+    \texttt{C} $\to$ \texttt{degree\_Celsius} was already proposed
+    in the Prompt~\#2 audit).
+
+  \item \textbf{Units on swath-relative gradient sums.}
+    \texttt{*\_sum\_grad\_as\_per\_km},
+    \texttt{*\_sum\_grad\_at\_per\_km},
+    \texttt{*\_sum\_grad\_mag\_per\_km}: the suffix
+    \texttt{\_per\_km} explicitly states the unit
+    (\texttt{units="degree\_Celsius km-1"}). Squared variants:
+    \texttt{units="degree\_Celsius2 km-2"}.
+
+  \item \textbf{Long names.} For every variable, a long name can be
+    formed mechanically from the components; see
+    Table~\ref{tab:longnames}.
+
+  \item \textbf{Global attribute set (minimum).}
+    \texttt{Conventions="CF-1.8"};
+    \texttt{title="Monthly day/night MODIS Aqua SST and SST-gradient
+    statistics on a $1^\circ\times 1^\circ$ global grid"};
+    \texttt{cdm\_data\_type="Grid"}.
+
+  \item \textbf{Time coverage.} For each file, derive
+    \begin{quote}\ttfamily
+      time\_coverage\_start = "YYYY-MM-01T00:00:00Z" \\
+      time\_coverage\_end   = "YYYY-MM-DDT23:59:59Z"
+    \end{quote}
+    where \texttt{MM/YYYY} come from the filename and
+    \texttt{DD} is the last day of \texttt{MM}.
+
+  \item \textbf{Geospatial extent.}
+    \texttt{geospatial\_lat\_min=-90}, \texttt{lat\_max=+90},
+    \texttt{lon\_min=-180}, \texttt{lon\_max=+180},
+    \texttt{geospatial\_lat\_resolution="1 degree"},
+    \texttt{geospatial\_lon\_resolution="1 degree"}.
+\end{enumerate}
+
+\subsection{\es{} -- \gs{}}\label{sec:es-gs}
+
+These are essential but rest on inference; a reader should treat
+the proposed values as best guesses that the producer should
+confirm before publication.
+
+\begin{enumerate}
+  \item \textbf{Time variable (best guess).} Add a scalar time
+    coordinate
+    \begin{quote}\ttfamily
+      time = (days since 1970-01-01) at the centre of \\
+      \phantom{time = }the month encoded in the filename \\
+      time: units="days since 1970-01-01 00:00:00 UTC", \\
+      \phantom{time:}\ standard\_name="time", axis="T", \\
+      \phantom{time:}\ calendar="gregorian", \\
+      \phantom{time:}\ bounds="time\_bnds"
+    \end{quote}
+    with \texttt{time\_bnds = [first\_day, last\_day]} of the
+    month. Guess because the file itself does not declare a time
+    representation; mid-month UTC is the convention used by most
+    monthly satellite products but cannot be confirmed without the
+    producer.
+
+  \item \textbf{Day / night definition (best guess).}
+    \texttt{comment} on every \texttt{day\_*} variable:
+    ``Aqua ascending node ($\sim$13:30 local solar time)''; on
+    every \texttt{night\_*} variable:
+    ``Aqua descending node ($\sim$01:30 local solar time)''. This
+    is the standard MODIS-Aqua day/night split; guess because no
+    explicit threshold is recorded in either branch.
+
+  \item \textbf{`as'/`at' as along-scan/along-track (best
+    guess).} \texttt{comment} on every
+    \texttt{*\_grad\_as\_per\_km} variable:
+    ``Along-scan (across-track) component of the SST gradient,
+    in the swath-relative frame.'' Analogous for
+    \texttt{*\_grad\_at\_per\_km} with ``along-track.'' Guess
+    because the file does not spell out the abbreviation, but
+    the naming and the std-dev parity with \texttt{eastward}/
+    \texttt{northward} make this the only natural reading.
+
+  \item \textbf{cell\_methods.}
+    \begin{quote}\ttfamily
+      *\_pixel\_count: cell\_methods="area: count time: sum" \\
+      *\_sum\_SST:    cell\_methods="area: sum time: sum" \\
+      *\_sum\_SST\_squared: cell\_methods="area: sum time: sum" \\
+      *\_sum\_*\_gradient[\_squared]: cell\_methods="area: sum time: sum"
+    \end{quote}
+    This expresses the bookkeeping: each cell carries
+    sums across the month and across all valid pixels in the
+    cell, so that an aggregator can recompute means and
+    variances. Guess in form (the CF \texttt{cell\_methods}
+    syntax is not entirely unambiguous for accumulated sums)
+    but the substance is firmly inferable from the variable
+    naming.
+
+  \item \textbf{Coordinates attribute.}
+    \texttt{coordinates="time lat lon"} on every data variable,
+    so that a CF-aware reader links the field to its axes
+    (\texttt{time} is a scalar but its addition is required by
+    CF when \texttt{time\_coverage\_*} is in the globals).
+
+  \item \textbf{Per-variable computational notes for users.}
+    Add as \texttt{comment} on each variable, the divisor that
+    converts the sum to a mean (this is the most likely thing a
+    user will get wrong):
+    \begin{itemize}[topsep=0pt]
+      \item \texttt{*\_sum\_SST} mean: divide by
+        \texttt{*\_pixel\_count}.
+      \item \texttt{*\_sum\_eastward\_gradient},
+        \texttt{*\_sum\_northward\_gradient},
+        \texttt{*\_sum\_magnitude\_gradient}: divide by
+        \texttt{*\_pixel\_count}.
+      \item \texttt{*\_sum\_grad\_as\_per\_km}: divide by
+        \texttt{*\_as\_pixel\_count}.
+      \item \texttt{*\_sum\_grad\_at\_per\_km}: divide by
+        \texttt{*\_at\_pixel\_count}.
+      \item \texttt{*\_sum\_grad\_mag\_per\_km}: divide by
+        \texttt{*\_at\_pixel\_count} (verified empirically; see
+        \S\ref{sec:data}).
+    \end{itemize}
+    The matching rule for the \texttt{\_squared} sums is the
+    same divisor.
+\end{enumerate}
+
+\subsection{\es{} -- \nc{}}\label{sec:es-nc}
+
+The audit would not feel comfortable proposing a value for these,
+but they are essential for proper re-use:
+
+\begin{itemize}
+  \item \textbf{date\_created} of each file (per-file).
+    The producer's filesystem and processing log have this; the
+    file itself does not.
+  \item \textbf{history.} The processing history (script,
+    git commit / version, system, dependencies). Critical for
+    reproducibility but absent.
+  \item \textbf{Specific algorithm used to compute the
+    upstream pixel-level gradients}, recorded as
+    \texttt{comment} or \texttt{source}.
+\end{itemize}
+
+\subsection{\nh{} -- \vc{}}\label{sec:nh-vc}
+
+\begin{enumerate}
+  \item \textbf{ACDD provenance and contacts (inherited).} The
+    sibling branch \texttt{SST\_Orbits/} declares these
+    consistently across files. Reasonable to copy:
+    \begin{quote}\ttfamily
+      institution="University of Rhode Island - \\
+      \phantom{institution=}Graduate School of Oceanography" \\
+      creator\_name="Peter Cornillon" \\
+      creator\_email="pcornillon@gso.uri.edu" \\
+      creator\_url="http://www.sstfronts.org" \\
+      project="SST Fronts" \\
+      publisher\_name="SST Fronts" \\
+      publisher\_institution=\textit{same as institution}
+    \end{quote}
+  \item \textbf{Source and lineage}.
+    \begin{quote}\ttfamily
+      source="MODIS Aqua L2 SST (URI reprocessing of NASA \\
+      \phantom{source=}OceanColor L2 granules); the per-orbit \\
+      \phantom{source=}files are at \dots/SST\_Orbits/." \\
+      processing\_level="L4"   (monthly grid is L4) \\
+      platform="Aqua" \\
+      instrument="MODIS"
+    \end{quote}
+
+  \item \textbf{Conventions on the squared sums.} CF doesn't have
+    a standard\_name for ``sum of squared SST'', so propose
+    \begin{quote}\ttfamily
+      *\_sum\_SST\_squared:\\
+      \phantom{xx}long\_name="Sum of squared SST contributions" \\
+      \phantom{xx}cell\_methods="area: sum\_of\_squares time: sum" \\
+      \phantom{xx}comment="Use $\bar{x^2}-\bar{x}^2$ to recover variance."
+    \end{quote}
+    Same template for the gradient-squared sums.
+
+  \item \textbf{Bounds variables for the coordinate axes.}
+    \texttt{lat\_bnds(180,2)} = $[[-90,-89],\ldots,[89,90]]$;
+    \texttt{lon\_bnds(360,2)} = $[[-180,-179],\ldots,[179,180]]$;
+    referenced as \texttt{lat:bounds="lat\_bnds"} and
+    \texttt{lon:bounds="lon\_bnds"}.
+\end{enumerate}
+
+\subsection{\nh{} -- \gs{}}\label{sec:nh-gs}
+
+\begin{enumerate}
+  \item \textbf{standard\_name on the gradient sums.} CF has
+    \texttt{eastward\_temperature\_gradient} and
+    \texttt{northward\_temperature\_gradient} for the components;
+    the sums in this file are not themselves temperature
+    gradients, so a strict CF reading would invent
+    \texttt{standard\_name} extensions. Best to omit
+    \texttt{standard\_name} entirely on the \texttt{sum\_*}
+    variables and use \texttt{long\_name} +
+    \texttt{cell\_methods} to carry the meaning.
+  \item \textbf{ACDD keywords.} \texttt{keywords="EARTH SCIENCE >
+    OCEANS > OCEAN TEMPERATURE > SEA SURFACE TEMPERATURE; EARTH
+    SCIENCE > OCEANS > OCEAN TEMPERATURE > SST FRONTS; EARTH
+    SCIENCE > OCEANS > OCEAN TEMPERATURE > SST GRADIENTS"} (GCMD
+    style).
+    \texttt{keywords\_vocabulary="GCMD Earth Science Keywords"}.
+  \item \textbf{License and acknowledgement.} Copy verbatim from
+    \texttt{SST\_Orbits/}: ``These data are openly available
+    \dots'' Guess because the gradient files may be governed by
+    a different licence than the orbit files; producer should
+    confirm.
+  \item \textbf{cf\_role / featureType.} Most likely
+    \texttt{featureType="grid"}; not strictly needed since the
+    file is implicitly a regular grid, but a CF reader may
+    require it.
+  \item \textbf{references.} \url{http://www.sstfronts.org/} as in
+    \texttt{SST\_Orbits/}. Guess because the publication
+    reference for the gradient-statistics derived product
+    specifically may differ.
+\end{enumerate}
+
+\subsection{\nh{} -- \nc{}}\label{sec:nh-nc}
+
+These are interesting attributes that one would normally want, but
+that I do not have evidence to propose:
+
+\begin{itemize}
+  \item Quality flags that may have been applied at the
+    aggregation step (e.g., minimum number of valid pixels per
+    cell, exclusion of cloud-edge pixels). Are any cells
+    deliberately suppressed?
+  \item Exact relationship between this file and the related
+    \texttt{gradients\_by\_period\_5day/} (which is 403 from the
+    public OPeNDAP endpoint). Likely a 5-day analog of the
+    monthly product, but I have no direct evidence.
+  \item A \texttt{coverage\_content\_type} (ACDD): is this
+    ``physicalMeasurement'', ``modelResult'',
+    ``referenceInformation''? The sums are observational, the
+    gridding is computational, the choice is not obvious.
+  \item Whether the gradient computation was carried out on
+    \texttt{SST\_In} or on the smoothed \texttt{regridded\_sst}
+    in the orbit files. The orbit-file
+    \texttt{eastward\_gradient} attributes don't say; this
+    monthly file inherits whatever choice was made upstream.
+\end{itemize}
+
+\section{Per-variable proposed long\_name and units}\label{sec:longnames}
+
+The names below follow the structure proposed in
+\S\ref{sec:es-vc}. Generated mechanically from the variable name
+grammar.
+
+\footnotesize
+\begin{longtable}{@{}L{5.9cm} L{3.4cm} L{6.9cm}@{}}
+\caption{Proposed COARDS-essential metadata for every variable in a
+\texttt{gradients\_by\_period} file. \emph{All} variables are
+\texttt{Float64} on \texttt{(lon=360, lat=180)} with
+\texttt{\_FillValue=NaN}. Confidence is \vc{} for everything in
+this table; \texttt{long\_name} is generated mechanically from the
+naming grammar.}\label{tab:longnames}\\
+\toprule
+\textbf{Variable} & \textbf{units} & \textbf{long\_name} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Variable} & \textbf{units} & \textbf{long\_name} \\
+\midrule
+\endhead
+
+\texttt{day\_pixel\_count}      & \texttt{1} & Number of valid daytime SST pixels in the cell over the month \\
+\texttt{night\_pixel\_count}    & \texttt{1} & Number of valid night-time SST pixels in the cell over the month \\
+\texttt{day\_as\_pixel\_count}  & \texttt{1} & Number of pixels with a valid along-scan gradient (daytime) \\
+\texttt{night\_as\_pixel\_count}& \texttt{1} & Number of pixels with a valid along-scan gradient (night-time) \\
+\texttt{day\_at\_pixel\_count}  & \texttt{1} & Number of pixels with a valid along-track gradient (daytime) \\
+\texttt{night\_at\_pixel\_count}& \texttt{1} & Number of pixels with a valid along-track gradient (night-time) \\
+\midrule
+\texttt{day\_sum\_SST}                  & \texttt{degree\_Celsius}  & Sum of daytime SST contributions in the cell \\
+\texttt{day\_sum\_SST\_squared}         & \texttt{degree\_Celsius2} & Sum of squared daytime SST contributions in the cell \\
+\texttt{night\_sum\_SST}                & \texttt{degree\_Celsius}  & Sum of night-time SST contributions in the cell \\
+\texttt{night\_sum\_SST\_squared}       & \texttt{degree\_Celsius2} & Sum of squared night-time SST contributions in the cell \\
+\midrule
+\texttt{day\_sum\_eastward\_gradient}            & \texttt{degree\_Celsius km-1} & Sum of daytime eastward SST gradient \\
+\texttt{day\_sum\_eastward\_gradient\_squared}   & \texttt{degree\_Celsius2 km-2} & Sum of squared daytime eastward SST gradient \\
+\texttt{day\_sum\_northward\_gradient}           & \texttt{degree\_Celsius km-1} & Sum of daytime northward SST gradient \\
+\texttt{day\_sum\_northward\_gradient\_squared}  & \texttt{degree\_Celsius2 km-2} & Sum of squared daytime northward SST gradient \\
+\texttt{day\_sum\_magnitude\_gradient}           & \texttt{degree\_Celsius km-1} & Sum of daytime SST gradient magnitude (geographic frame) \\
+\texttt{day\_sum\_magnitude\_gradient\_squared}  & \texttt{degree\_Celsius2 km-2} & Sum of squared daytime SST gradient magnitude (geographic) \\
+\texttt{night\_sum\_eastward\_gradient}          & \texttt{degree\_Celsius km-1} & Sum of night-time eastward SST gradient \\
+\texttt{night\_sum\_eastward\_gradient\_squared} & \texttt{degree\_Celsius2 km-2} & Sum of squared night-time eastward SST gradient \\
+\texttt{night\_sum\_northward\_gradient}         & \texttt{degree\_Celsius km-1} & Sum of night-time northward SST gradient \\
+\texttt{night\_sum\_northward\_gradient\_squared}& \texttt{degree\_Celsius2 km-2} & Sum of squared night-time northward SST gradient \\
+\texttt{night\_sum\_magnitude\_gradient}         & \texttt{degree\_Celsius km-1} & Sum of night-time SST gradient magnitude (geographic) \\
+\texttt{night\_sum\_magnitude\_gradient\_squared}& \texttt{degree\_Celsius2 km-2} & Sum of squared night-time SST gradient magnitude (geographic) \\
+\midrule
+\texttt{day\_sum\_grad\_as\_per\_km}             & \texttt{degree\_Celsius km-1} & Sum of daytime along-scan SST gradient (swath-relative) \\
+\texttt{day\_sum\_grad\_as\_per\_km\_squared}    & \texttt{degree\_Celsius2 km-2} & Sum of squared daytime along-scan SST gradient \\
+\texttt{day\_sum\_grad\_at\_per\_km}             & \texttt{degree\_Celsius km-1} & Sum of daytime along-track SST gradient (swath-relative) \\
+\texttt{day\_sum\_grad\_at\_per\_km\_squared}    & \texttt{degree\_Celsius2 km-2} & Sum of squared daytime along-track SST gradient \\
+\texttt{day\_sum\_grad\_mag\_per\_km}            & \texttt{degree\_Celsius km-1} & Sum of daytime SST gradient magnitude (swath-relative frame) \\
+\texttt{day\_sum\_grad\_mag\_per\_km\_squared}   & \texttt{degree\_Celsius2 km-2} & Sum of squared daytime SST gradient magnitude (swath) \\
+\texttt{night\_sum\_grad\_as\_per\_km}           & \texttt{degree\_Celsius km-1} & Sum of night-time along-scan SST gradient \\
+\texttt{night\_sum\_grad\_as\_per\_km\_squared}  & \texttt{degree\_Celsius2 km-2} & Sum of squared night-time along-scan SST gradient \\
+\texttt{night\_sum\_grad\_at\_per\_km}           & \texttt{degree\_Celsius km-1} & Sum of night-time along-track SST gradient \\
+\texttt{night\_sum\_grad\_at\_per\_km\_squared}  & \texttt{degree\_Celsius2 km-2} & Sum of squared night-time along-track SST gradient \\
+\texttt{night\_sum\_grad\_mag\_per\_km}          & \texttt{degree\_Celsius km-1} & Sum of night-time SST gradient magnitude (swath) \\
+\texttt{night\_sum\_grad\_mag\_per\_km\_squared} & \texttt{degree\_Celsius2 km-2} & Sum of squared night-time SST gradient magnitude (swath) \\
+\bottomrule
+\end{longtable}
+\normalsize
+
+\section{Cross-tabular summary}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{@{}L{2.8cm} L{6.0cm} L{6.0cm}@{}}
+\toprule
+& \es{} & \nh{} \\
+\midrule
+\vc{}
+& Coordinate variables (\texttt{lat}, \texttt{lon}), \texttt{\_FillValue=NaN}, all per-variable units and long\_names, time\_coverage and geospatial globals, Conventions/title/cdm\_data\_type.
+& Inherited provenance from \texttt{SST\_Orbits/} (institution, creator\_*, project, publisher\_*); \texttt{source}, \texttt{platform}, \texttt{instrument}, \texttt{processing\_level}; coordinate \texttt{bounds} variables. \\
+\midrule
+\gs{}
+& Scalar \texttt{time} variable (mid-month), day/night node \texttt{comment}s, as/at = along-scan/along-track \texttt{comment}s, \texttt{cell\_methods}, \texttt{coordinates}, per-variable divisor \texttt{comment}.
+& \texttt{keywords} / \texttt{keywords\_vocabulary}, license, \texttt{featureType="grid"}, \texttt{references}. \\
+\midrule
+\nc{}
+& \texttt{date\_created} per file, \texttt{history}, exact upstream-gradient algorithm.
+& \texttt{coverage\_content\_type}, downstream relation to \texttt{gradients\_by\_period\_5day/}, choice of \texttt{SST\_In} vs.\ \texttt{regridded\_sst} as the upstream SST field, any minimum-pixel cell suppression. \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{Summary}
+
+The \texttt{gradients\_by\_period/} branch is the harder of the
+two readable branches: nothing is declared in the file, and a
+recipient has to derive everything from the variable-name grammar,
+from the data values, and from the sibling branch. The mechanical
+inferences (\S\ref{sec:es-vc}) are not in dispute: the dimension
+names \texttt{lat}/\texttt{lon} with sizes 180/360 plus the
+land/ocean test pin the geographic grid; the suffix
+\texttt{\_per\_km} and the sibling branch pin the units; the
+Float64 dtype plus observed NaNs pin the fill value; the
+\texttt{day\_}/\texttt{night\_} prefix plus the sibling branch
+pin the temporal decomposition. The guesses (\S\ref{sec:es-gs})
+are the points at which the writer's intentions become invisible
+to the reader: which divisor to use for which sum, whether
+\texttt{as}/\texttt{at} stand for along-scan/along-track, what
+mid-month time stamp to record. The unguessable items
+(\S\ref{sec:es-nc}, \S\ref{sec:nh-nc}) are essentially the
+\emph{history} of the file --- when, by whom, by what code, with
+which upstream choices --- and no amount of structural inference
+recovers those.
+
+If \texttt{grep-dap} ever gets to the point of \emph{writing}
+inferred attributes back into a CF-compliant copy of files like
+these, the rule of thumb that the audit suggests is: write
+everything in \es{}--\vc{} silently, write everything in
+\es{}--\gs{} but tag the attribute (e.g.\ via a
+\texttt{comment} prefix \texttt{"[inferred]"}), and refuse to
+write \es{}--\nc{} entries at all rather than fabricate them.
+
+\section{Caveats}
+
+\begin{itemize}
+  \item Only the day-side of one month (\texttt{07\_2020}) and
+    one month of contrasting season (\texttt{01\_2020}) were
+    used for the sign / divisor / orientation tests. The
+    same probe on a different month, or on a night-side
+    variable, could reveal exceptions.
+  \item All proposals are written against COARDS-recognizing
+    consumers; CF-1.8 is closer to current practice and is the
+    convention proposed for the \texttt{Conventions} attribute.
+  \item The companion branch \texttt{gradients\_by\_period\_5day/}
+    returns Hyrax 403; if its filename pattern matches
+    (\texttt{augmented\_5day\_stats\_*}) the same inferences
+    apply, but the schema cannot be verified without read access.
+\end{itemize}
+
+\end{document}

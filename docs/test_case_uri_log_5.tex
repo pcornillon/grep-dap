@@ -1,0 +1,144 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{amsmath}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  columns=fullflexible,
+  frame=single,
+  backgroundcolor=\color{gray!10},
+  showstringspaces=false
+}
+
+\title{URI OPeNDAP Test Case: Working Log (Prompt \#5)}
+\author{Compiled for P. Cornillon}
+\date{2026-05-16}
+
+\begin{document}
+\maketitle
+
+\section*{Purpose}
+
+Working log for Prompt~\#5: write user-facing descriptions of the
+two readable datasets, plus the two agent-facing usage files.
+
+\section{Prompt \#5 (2026-05-16 22:06 UTC)}
+
+\subsection{Instruction}
+
+\emph{``Write a description of each of the two datasets for a
+typical user; i.e., not too detailed but detailed enough for the
+user to decide whether or not the dataset meets their needs and to
+acquire subsets of the data in which they might be interested.
+Also, provide \texttt{usage\_sst.md} and
+\texttt{usage\_gradient\_SST.md} files, which the user can provide
+to an AI agent to acquire and make use of the data.''}
+
+\subsection{Deliverables}
+
+Four files (besides this log):
+
+\begin{itemize}
+  \item \texttt{docs/uri\_test\_case\_5.tex} --- short, accessible
+    descriptions of \texttt{SST\_Orbits/} and
+    \texttt{gradients\_by\_period/}.
+  \item \texttt{docs/usage\_sst.md} --- self-contained markdown
+    guide for the orbit branch, intended to be handed to an AI
+    agent or a working scientist.
+  \item \texttt{docs/usage\_gradient\_SST.md} --- the analog for
+    the gradient-statistics branch, with explicit notes on every
+    inferred attribute.
+  \item \texttt{scripts/usage\_sanity.py} --- sanity test that
+    runs the headline code examples from both \texttt{.md} files
+    against the live server, to verify they work as written.
+\end{itemize}
+
+\subsection{Drafting choices}
+
+\paragraph{The user description (uri\_test\_case\_5.tex).}
+Kept short. For each dataset, a six-line \emph{at-a-glance} block,
+a \emph{who it is for} paragraph, a $\sim$15-line code snippet for
+a sub-set, and an \emph{honest limitations} bullet list. The
+deeper material (full variable tables, exhaustive caveats,
+algorithm-support estimate) is in earlier outputs of this test
+case and in the two \texttt{.md} files.
+
+\paragraph{usage\_sst.md.} Structured for a Python-fluent agent.
+Server URL, filename pattern, DAP4-preferred access via
+\texttt{pydap.client.open\_url}, variable inventory grouped by
+role (SST/gradients, geolocation, time, AMSR-E co-located,
+provenance), code recipes for the most common cases (read a
+window, get the orbit time, bracket by nadir lat), and a numbered
+list of the metadata pitfalls a careful agent must handle
+(non-UDUNITS units, scale\_factor on Int32 lat/lon, missing time
+reference in \texttt{DateTime}, malformed \texttt{flag\_masks},
+AMSR-E placeholders after 2011, the two clearly wrong unit
+declarations in the L2eqa group).
+
+\paragraph{usage\_gradient\_SST.md.} Structured the same way but
+with everything declared up-front as \emph{inferred} because the
+file itself carries no metadata. Includes the verified
+cell-centered grid (lat\_idx 0 = $-89.5^\circ$, lon\_idx 0 =
+$-179.5^\circ$), the per-variable units (all derived from the
+naming grammar and the sibling \texttt{SST\_Orbits/} branch), the
+divisor rule (\texttt{*\_sum\_grad\_as\_per\_km} pairs with
+\texttt{as\_pixel\_count}, \texttt{*\_sum\_grad\_at\_per\_km} with
+\texttt{at\_pixel\_count}, \texttt{*\_sum\_grad\_mag\_per\_km}
+with \texttt{at\_pixel\_count} verified empirically), and a
+\S6.3 ``what I won't guess'' section that lists items where the
+agent must defer rather than fabricate.
+
+\subsection{Sanity check}
+
+\texttt{scripts/usage\_sanity.py} ran the three headline examples
+from the two markdown files against the live server. Outputs:
+
+\begin{lstlisting}
+SST_In sample (orbit 115220, eq, j=600:700)
+  n_valid=10000, range=[16.16,29.19] C, mean=27.53 C
+DateTime -> 2024-01-01T01:15:58 UTC
+
+gradients_by_period 07_2020:
+  per-cell day-mean SST     n=38540, range=[-1.12,35.17], mean=16.75
+  per-cell day-mean |grad|  n=39909, range=[0.001,0.84], mean=0.046
+
+Bounding box (Atlantic 100W..50W, 20N..50N):
+  shape (51,31), n_valid=1032, mean SST=25.28 C
+\end{lstlisting}
+
+All three return sensible oceanographic values. One example in
+\texttt{usage\_sst.md} originally read SST at line index
+20000:20100 of orbit 115220; that index range turned out to be in
+the polar Kara Sea region (every pixel below the
+\texttt{valid\_min}, returning empty after masking), so the
+example was rewritten to read at line indices 29200:29300 (near
+the equator) and a tip was added telling the reader how to pick a
+window with valid SST by bracketing on \texttt{nadir\_latitude}.
+
+The second small fix: the \texttt{pydap} slice object returned by
+\texttt{ds["SST\_In"][...]} is a \texttt{SelfClearingArray}, not a
+numpy ndarray. The example now wraps the slice in
+\texttt{np.asarray(\ldots .data, dtype="f8")} before the
+\texttt{.astype("f8")} step. (This was caught by the sanity
+script.)
+
+\subsection{Files produced}
+
+\begin{lstlisting}
+docs/uri_test_case_5.tex
+docs/test_case_uri_log_5.tex      (this file)
+docs/usage_sst.md
+docs/usage_gradient_SST.md
+scripts/usage_sanity.py
+\end{lstlisting}
+
+\subsection{Session timing}
+
+Started 2026-05-16 22:06\,UTC. Closed log 2026-05-16
+$\sim$22:50\,UTC.
+
+\end{document}

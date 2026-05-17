@@ -1,0 +1,10 @@
+\contentsline {section}{\numberline {1}Background and corrections to Prompt \#1}{1}{section.1}%
+\contentsline {section}{\numberline {2}COARDS criteria applied}{2}{section.2}%
+\contentsline {section}{\numberline {3}Global (root-group) attributes}{2}{section.3}%
+\contentsline {paragraph}{COARDS status.}{3}{section*.2}%
+\contentsline {section}{\numberline {4}Per-variable assessment}{3}{section.4}%
+\contentsline {subsection}{\numberline {4.1}Root group (\texttt {\hbadness =10000 \relax /})}{3}{subsection.4.1}%
+\contentsline {subsection}{\numberline {4.2}Group \texttt {\hbadness =10000 \relax /Regrid\_to\_L2eqa}}{5}{subsection.4.2}%
+\contentsline {subsection}{\numberline {4.3}Group \texttt {\hbadness =10000 \relax /contributing\_granules}}{7}{subsection.4.3}%
+\contentsline {section}{\numberline {5}Summary}{7}{section.5}%
+\contentsline {section}{\numberline {6}Caveats}{8}{section.6}%

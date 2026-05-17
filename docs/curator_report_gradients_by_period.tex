@@ -1,0 +1,221 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{enumitem}
+
+\emergencystretch=4em
+\tolerance=9999
+\hbadness=10000
+\sloppy
+
+\title{Metadata Notes for \texttt{gradients\_by\_period/}\\
+       \large URI OPeNDAP server, \texttt{sst-aqua.gso.uri.edu}}
+\author{An outside reader (grep-dap test case)}
+\date{2026-05-17}
+
+\begin{document}
+\maketitle
+
+\paragraph{Context.}
+This note summarizes the metadata gaps an external client
+(\texttt{grep-dap}) found in the public monthly gradient files at
+\texttt{https://sst-aqua.gso.uri.edu/opendap/gradients\_by\_period/}
+(270 files, \texttt{augmented\_monthly\_stats\_MM\_YYYY.nc},
+2003-01 through 2024-12). The headline finding is simple: \textbf{the
+files declare no semantic metadata at all.} There are no global
+attributes, no per-variable attributes, no coordinate variables, no
+fill values. A reader has to infer everything from variable names,
+the data themselves, and the companion \texttt{SST\_Orbits/} branch.
+Full audit (with inferences classified by confidence): \texttt{docs/uri\_test\_case\_3.tex}.
+
+\section*{What an external reader can infer with high confidence}
+
+These were verified by direct data probes; treat them as facts a
+re-issue of the files should encode explicitly.
+
+\begin{enumerate}[leftmargin=*,topsep=2pt]
+  \item \textbf{Coordinate grid.}
+    Cell-centered $1^\circ \times 1^\circ$ global, lat axis runs
+    south-to-north, lon axis runs $-180^\circ$ to $+180^\circ$
+    cell-centered. Verified by classifying six known-land points
+    (Sahara, Australia interior, Amazon, Central US, Greenland,
+    Tibet) and six known-ocean points against
+    \texttt{day\_pixel\_count}; only this convention gets all 12
+    correct.
+  \item \textbf{Variable units.} SST sums in
+    $^\circ$C (squared sums in $^\circ$C$^{2}$); gradient sums in
+    $^\circ$C\,km$^{-1}$; counts dimensionless. Inherited from the
+    sibling \texttt{SST\_Orbits/} branch where the same physical
+    quantities are stated.
+  \item \textbf{Fill value.} \texttt{NaN}. Observed in every sum
+    variable.
+  \item \textbf{Temporal coverage.} One calendar month per file,
+    encoded in the filename.
+  \item \textbf{Day / night split.} Aqua ascending node
+    ($\sim$13:30 LST) vs.\ descending node ($\sim$01:30 LST). The
+    standard MODIS-Aqua convention; the file does not declare it.
+  \item \textbf{Divisor pairing.} Three pixel-count flavours
+    paired with three different sum families:
+    \begin{itemize}[topsep=0pt]
+      \item \texttt{*\_sum\_SST}, \texttt{*\_sum\_eastward\_gradient},
+        \texttt{*\_sum\_northward\_gradient},
+        \texttt{*\_sum\_magnitude\_gradient} (and their
+        \texttt{\_squared}): divide by \texttt{*\_pixel\_count}.
+      \item \texttt{*\_sum\_grad\_as\_per\_km} (and
+        \texttt{\_squared}): divide by \texttt{*\_as\_pixel\_count}.
+      \item \texttt{*\_sum\_grad\_at\_per\_km} (and
+        \texttt{\_squared}): divide by \texttt{*\_at\_pixel\_count}.
+      \item \texttt{*\_sum\_grad\_mag\_per\_km}: divide by
+        \texttt{*\_at\_pixel\_count} (verified empirically: that
+        divisor gives a per-cell mean magnitude that matches
+        \texttt{*\_sum\_magnitude\_gradient}/\texttt{*\_pixel\_count}).
+    \end{itemize}
+  \item \textbf{Upstream gradient scale.} The per-pixel gradients
+    that get summed here were computed at the L2 swath level with
+    an effective operator support of $5\pm 2$ km. Three
+    independent estimates (pixel-count ratios, magnitude-RMSE
+    matching, autocorrelation length) all converge on this
+    number. See \texttt{docs/uri\_test\_case\_4.tex}.
+\end{enumerate}
+
+\section*{Essential additions for the file to be self-describing}
+
+\begin{enumerate}[leftmargin=*,topsep=2pt]
+  \item \textbf{Coordinate variables.} Add 1-D
+    \texttt{lat(180)} and \texttt{lon(360)} with values
+    $-89.5,\ldots,+89.5$ and $-179.5,\ldots,+179.5$ and
+    attributes
+    \begin{quote}\ttfamily
+      lat: units="degrees\_north", standard\_name="latitude",
+      axis="Y"\\
+      lon: units="degrees\_east",  standard\_name="longitude",
+      axis="X"
+    \end{quote}
+    Without these, no CF-aware tool will plot the data without
+    user intervention.
+  \item \textbf{\texttt{\_FillValue=NaN} on every variable.}
+  \item \textbf{Per-variable \texttt{units} and \texttt{long\_name}.}
+    Mechanical from the naming grammar; a complete list is in
+    \texttt{docs/uri\_test\_case\_3.tex} \S6.
+  \item \textbf{Minimum global attribute set.}
+    \begin{quote}\ttfamily
+      Conventions = "CF-1.8"\\
+      title       = "Monthly day/night MODIS Aqua SST and \\
+      \phantom{title       = }SST-gradient statistics on a \\
+      \phantom{title       = }1$^\circ\times$1$^\circ$ global grid"\\
+      institution = (as in SST\_Orbits/)\\
+      source      = "MODIS Aqua L2 SST (URI processing); see \\
+      \phantom{source      = }SST\_Orbits/"\\
+      cdm\_data\_type = "Grid"\\
+      time\_coverage\_start / end (per file, from filename)\\
+      geospatial\_lat\_min/max = -90 / +90 \\
+      geospatial\_lon\_min/max = -180 / +180\\
+      geospatial\_lat\_resolution = "1 degree (bin size)"\\
+      geospatial\_lon\_resolution = "1 degree (bin size)"
+    \end{quote}
+  \item \textbf{\texttt{cell\_methods} on every sum variable.}
+    For example:
+    \begin{quote}\ttfamily
+      *\_sum\_SST:\\
+      \phantom{xx}cell\_methods = "area: sum time: sum"\\
+      *\_sum\_SST\_squared:\\
+      \phantom{xx}cell\_methods = "area: sum\_of\_squares time: sum"\\
+      *\_pixel\_count:\\
+      \phantom{xx}cell\_methods = "area: count time: sum"
+    \end{quote}
+    These encode the bookkeeping that lets a downstream tool
+    recover mean and variance.
+  \item \textbf{Comments encoding the inferences in items 5--7 of
+    the previous list.} One- or two-line \texttt{comment} fields
+    on the affected variables:
+    \begin{itemize}[topsep=0pt]
+      \item On every \texttt{day\_*} / \texttt{night\_*}:
+        ``MODIS Aqua ascending'' / ``descending node, $\sim$13:30
+        ($\sim$01:30) local solar time''.
+      \item On every \texttt{*\_grad\_as\_per\_km},
+        \texttt{*\_grad\_at\_per\_km}, \texttt{*\_grad\_mag\_per\_km}:
+        ``along-scan / along-track / swath-relative-magnitude
+        component, in the swath-relative frame.''
+      \item Global-level comment: \\
+        ``Per-pixel gradients were computed at an effective
+        spatial scale of $\sim$5 km on L2 swath; values here are
+        accumulated into 1$^\circ$ monthly bins.''
+      \item Per-variable comment encoding the divisor pairing
+        in item~6 above.
+    \end{itemize}
+\end{enumerate}
+
+\section*{Recommended additions (high payoff for users)}
+
+\begin{enumerate}[leftmargin=*,topsep=2pt,start=7]
+  \item \textbf{Scalar \texttt{time} coordinate per file.} Carrying
+    a CF-style time avoids forcing every reader to parse the
+    filename:
+    \begin{quote}\ttfamily
+      time = days since 1970-01-01, set to mid-month UTC \\
+      time: units="days since 1970-01-01 00:00:00 UTC", \\
+      \phantom{time: }standard\_name="time", \\
+      \phantom{time: }calendar="gregorian", \\
+      \phantom{time: }bounds="time\_bnds"
+    \end{quote}
+    With \texttt{time\_bnds = [first\_day\_of\_month,
+    last\_day\_of\_month]}.
+
+  \item \textbf{ACDD discovery block} (inheritable from
+    \texttt{SST\_Orbits/}): \texttt{creator\_name},
+    \texttt{creator\_email}, \texttt{creator\_url},
+    \texttt{publisher\_name}, \texttt{publisher\_url},
+    \texttt{license}, \texttt{acknowledgement},
+    \texttt{keywords} / \texttt{keywords\_vocabulary},
+    \texttt{platform="Aqua"}, \texttt{instrument="MODIS"},
+    \texttt{processing\_level="L4"} (the monthly grid is L4).
+
+  \item \textbf{\texttt{bounds} variables for the coordinate axes:}
+    \texttt{lat\_bnds(180, 2)},
+    \texttt{lon\_bnds(360, 2)}.
+
+  \item \textbf{\texttt{coordinates} attribute on every data
+    variable:}
+    \begin{quote}\ttfamily
+      coordinates = "time lat lon"
+    \end{quote}
+\end{enumerate}
+
+\section*{Items not safely guessable from the file}
+
+These an outside reader simply cannot supply; they have to come
+from the producing code or notebook:
+
+\begin{itemize}[leftmargin=*,topsep=2pt]
+  \item \texttt{date\_created} per file.
+  \item \texttt{history} (processing software / version / git
+    commit, system, dependencies).
+  \item Exact functional form of the upstream gradient operator
+    (centered diff vs.\ Sobel vs.\ local least-squares of similar
+    support). The effective support is recoverable, but the
+    operator shape is not.
+  \item Whether \texttt{regridded\_sst} in the orbit files (the
+    field on which the gradient is computed) involves a spatial
+    averaging step in addition to the high-gradient masking.
+    Currently invisible from the public side.
+  \item Any minimum-pixel-per-cell suppression rule that may have
+    been applied.
+\end{itemize}
+
+\paragraph{Bottom line.}
+\texttt{gradients\_by\_period/} is a valuable derived product. The
+files themselves are unfortunately at the far end of the OPeNDAP
+metadata distribution: structurally regular but semantically
+silent. The cost of adding the items in the first two lists above
+is small (one-time work in the producing script) and the benefit
+is that the data become usable by any CF-aware reader without an
+out-of-band specification.
+
+\paragraph{Source.}
+Full audit and per-variable inferences: \\
+\texttt{docs/uri\_test\_case\_3.tex}. \\
+Spatial-scale estimation for the underlying gradients: \\
+\texttt{docs/uri\_test\_case\_4.tex}.
+
+\end{document}

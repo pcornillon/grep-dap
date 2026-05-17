@@ -1,0 +1,265 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{amsmath}
+
+\emergencystretch=3em
+\tolerance=2000
+\sloppy
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  columns=fullflexible,
+  frame=single,
+  backgroundcolor=\color{gray!10},
+  showstringspaces=false
+}
+
+\title{User-Facing Descriptions of the URI OPeNDAP Datasets\\
+       \large grep-dap test case, Prompt \#5}
+\author{Compiled for P. Cornillon}
+\date{2026-05-16}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Short, accessible descriptions of the two publicly readable
+datasets on \url{https://sst-aqua.gso.uri.edu/opendap/}, written
+for a working scientist deciding whether the data fits a need and
+how to pull a sub-set. Detailed agent-facing instructions are
+shipped as the two companion files
+\texttt{docs/usage\_sst.md} and
+\texttt{docs/usage\_gradient\_SST.md}; this document summarizes
+what those files cover.
+\end{abstract}
+
+\tableofcontents
+
+\section{Dataset 1: \texttt{SST\_Orbits/}}\label{sec:ds1}
+
+\subsection{At a glance}
+
+\begin{description}[leftmargin=2em,style=nextline,topsep=2pt]
+  \item[What it is.]
+    Per-orbit, L2-swath sea-surface temperature from MODIS aboard
+    NASA's Aqua satellite, reprocessed by URI. Each file is one
+    complete Aqua orbit ($\sim$100 minutes, $\sim$40\,000
+    along-track lines of 1\,354 across-track 1-km pixels).
+  \item[Coverage.]
+    2002 through 2024; $\sim$14 orbits/day; $\sim$1.2$\times 10^5$
+    files in total, organized by year and month.
+  \item[Native resolution.] 1 km at nadir, growing to $\sim$5 km at
+    the swath edges. MODIS swath width 2\,330 km.
+  \item[Format.] NetCDF-4, served via OPeNDAP Hyrax (DAP4 preferred).
+  \item[What you get per file.] SST, an SST gradient field (eastward
+    and northward components, in $^\circ$C/km), a quality-flag field,
+    a refined-mask field, pixel-level latitude/longitude, per-scan
+    nadir and swath-edge geolocation, the orbit start time, and a
+    side-group of co-located AMSR-E microwave fields (only meaningful
+    while AMSR-E was operational, June 2002 -- October 2011).
+  \item[Producer.]
+    P.\ Cornillon, URI Graduate School of Oceanography, ``SST Fronts''
+    project (\url{http://www.sstfronts.org}).
+\end{description}
+
+\subsection{Who it is for}
+
+This is the right dataset if you want \emph{per-orbit, swath-level}
+MODIS-Aqua SST and gradient values --- for example, to detect SST
+fronts in a single overpass, to validate against in-situ
+measurements, to study individual mesoscale features, or to build
+your own gridded composites. The orbit structure is preserved, so
+the scan geometry (along-scan / along-track, nadir / edge) is
+recoverable, and the file's quality flags and refined mask let a
+careful user filter pixels by data quality.
+
+It is \emph{not} the right dataset if you want a Level-3 or
+Level-4 SST analysis (gap-filled, gridded to a regular lat/lon
+mesh). For that, use a product such as JPL MUR
+or NOAA/NCEI's daily L4 (not provided here in publicly readable
+form).
+
+\subsection{How to get a sub-set}
+
+The OPeNDAP server allows array-index sub-setting via standard
+DAP4 hyperslab requests. The cheapest way is to first pull
+\texttt{nadir\_latitude} and \texttt{nadir\_longitude} (both of
+length \texttt{ny}, so $\sim$40\,000 floats each --- a few hundred
+kilobytes), bracket the line indices you want, then request the
+science variables over that index range:
+
+\begin{lstlisting}[language=Python]
+from pydap.client import open_url
+import numpy as np
+
+URL = ("https://sst-aqua.gso.uri.edu/opendap/SST_Orbits/2024/01/"
+       "AQUA_MODIS_orbit_115220_20240101T011558_L2_SST-URI_24-2.nc4")
+ds = open_url(URL, protocol="dap4")
+
+# Find lines near a specific nadir latitude
+nlat = np.asarray(ds["nadir_latitude"][:].data, dtype="f8")
+i0, i1 = np.searchsorted(nlat, [-5, +5])  # tropical band of this orbit
+
+# Pull a small SST patch in the middle of the swath
+sst   = ds["SST_In"][i0:i1, 600:700]
+scale = float(ds["SST_In"].attributes["scale_factor"])
+fill  = float(ds["SST_In"].attributes["_FillValue"])
+data  = np.asarray(sst.data, dtype="f8")
+data[data == fill] = np.nan
+data *= scale  # now in degree_Celsius
+\end{lstlisting}
+
+\noindent
+Full agent-facing instructions, including all 44 variables in the
+three groups, code recipes for bounding-box sub-setting and
+multi-orbit aggregation, and the metadata pitfalls that catch
+new users (e.g.\ \texttt{units="C"} not being UDUNITS, AMSR-E
+fields being $1\times 1$ placeholders after October 2011, etc.):
+see \texttt{docs/usage\_sst.md}.
+
+\subsection{Honest limitations}
+
+\begin{itemize}
+  \item Some variables declare units (\texttt{"C"}, \texttt{"C/km"},
+    \texttt{seconds}) that are not strictly UDUNITS-compatible; a
+    strict CF reader may reject them. They are unambiguous in
+    context.
+  \item The quality-flag attribute uses \texttt{flag\_masks=0},
+    which is malformed. Interpret \texttt{qual\_sst} as integer
+    values $0$\,=BEST, $1$\,=GOOD, $2$\,=QUESTIONABLE, $3$\,=BAD,
+    $4$\,=NOTPROCESSED.
+  \item The co-located AMSR-E variables are $1\times 1$
+    placeholders in files dated after October 2011.
+\end{itemize}
+
+\section{Dataset 2: \texttt{gradients\_by\_period/}}\label{sec:ds2}
+
+\subsection{At a glance}
+
+\begin{description}[leftmargin=2em,style=nextline,topsep=2pt]
+  \item[What it is.]
+    Monthly statistics on a $1^\circ \times 1^\circ$ global grid of
+    SST and SST-gradient values originally computed per-pixel from
+    the URI L2 MODIS-Aqua orbits (Dataset~1). Each cell carries
+    sums, sums of squares, and pixel counts --- enough to recover
+    monthly means, variances, and 1$^\circ$-cell distributions.
+  \item[Coverage.]
+    January 2003 through December 2024 (270 monthly files);
+    global; 1$^\circ$ bins; day-side and night-side separately.
+  \item[Spatial scale of the underlying gradient.]
+    $\sim$5 km (operator support of the differentiation step
+    applied to the L2 SST); not the 1$^\circ$ bin size.
+  \item[Format.] NetCDF, served via OPeNDAP Hyrax. \emph{The
+    files declare no semantic metadata at all} --- no units, no
+    fill value, no coordinate variables, no long names, no globals.
+  \item[What you get per file.] 34 \texttt{Float64} variables of
+    shape \texttt{(lon=360, lat=180)}: day/night pixel counts (three
+    flavours), sums of SST and SST squared, sums of two coordinate
+    forms of the gradient (geographic eastward / northward, and
+    swath-relative along-scan / along-track) and their magnitudes,
+    with paired \texttt{\_squared} variables. No time variable; the
+    file's month is encoded in the filename only.
+  \item[Producer.]
+    Same as Dataset~1 (inferred --- the gradient algorithm and unit
+    semantics descend directly from the orbit branch).
+\end{description}
+
+\subsection{Who it is for}
+
+This is the right dataset if you want \emph{monthly, gridded}
+summaries of SST and SST-gradient statistics across many years,
+for example to compute climatologies of SST fronts, to look at
+mesoscale activity patterns by season, to compare hemispheres or
+basins, or to construct training labels for ML models that work
+on gridded fields. The bookkeeping ($\Sigma$, $\Sigma^2$, $N$ per
+cell) means you can compute not just per-cell means but also
+variances, and you can re-aggregate across months by simply
+summing.
+
+It is \emph{not} the right dataset if you need the original
+per-pixel gradient values; for those, use the source orbit files
+in \texttt{SST\_Orbits/} (Dataset~1). The 1$^\circ$ binning hides
+the actual $\sim$5 km gradient measurement scale, so do not
+advertise the data as ``$1^\circ$ SST gradient.''
+
+\subsection{How to get a sub-set}
+
+The grid is small ($360\times 180$ Float64 = 540 kB per variable),
+so often the cheapest thing is to pull the whole field for one
+month. For a bounding-box sub-set:
+
+\begin{lstlisting}[language=Python]
+from pydap.client import open_url
+import numpy as np
+
+URL = ("https://sst-aqua.gso.uri.edu/opendap/gradients_by_period/"
+       "augmented_monthly_stats_07_2020.nc")
+ds = open_url(URL, protocol="dap4")
+
+# Inferred grid: cell-centered, south-to-north, -180..+180
+lonidx = lambda lon: int(round(lon + 179.5))
+latidx = lambda lat: int(round(lat +  89.5))
+
+i_lon0, i_lon1 = lonidx(-100), lonidx(-50) + 1   # 100W..50W (Atlantic)
+i_lat0, i_lat1 = latidx( 20),  latidx( 50) + 1   # 20N..50N
+
+N = np.asarray(ds["day_pixel_count"][i_lon0:i_lon1, i_lat0:i_lat1].data, dtype="f8")
+S = np.asarray(ds["day_sum_SST"   ][i_lon0:i_lon1, i_lat0:i_lat1].data, dtype="f8")
+mean_sst = np.where(N > 0, S / N, np.nan)        # degree Celsius
+\end{lstlisting}
+
+\noindent
+Full agent-facing instructions --- including the verified grid
+orientation, the per-variable inferred units, the divisor rule
+(which pixel count to pair with which sum), a worked recipe for
+recovering per-cell variance, and the list of every inference that
+the file does not declare --- are in
+\texttt{docs/usage\_gradient\_SST.md}.
+
+\subsection{Honest limitations}
+
+\begin{itemize}
+  \item The file declares no semantic metadata. Everything described
+    above is inferred from the variable names, from the companion
+    orbit branch, and from direct data probes. The inferences are
+    high-confidence for the structural items (grid, signs, fill,
+    units, divisors); medium-confidence for the day/night
+    interpretation (Aqua ascending vs. descending); and not at all
+    inferable for the file's exact processing history. See
+    \texttt{docs/uri\_test\_case\_3.tex} for the full audit.
+  \item NaN appears in some sum variables even where the pixel
+    count is positive --- an undeclared fill value. Always mask
+    before dividing.
+  \item Multiple flavours of gradient and pixel count: the
+    swath-relative \texttt{grad\_as}/\texttt{grad\_at} should be
+    divided by \texttt{as\_pixel\_count} and \texttt{at\_pixel\_count}
+    respectively, not by \texttt{pixel\_count}; conversely the
+    geographic \texttt{eastward}/\texttt{northward} gradients
+    \emph{are} paired with \texttt{pixel\_count}. The mismatch
+    catches most new users.
+\end{itemize}
+
+\section{Where the agent-facing files live}
+
+\begin{itemize}
+  \item \texttt{docs/usage\_sst.md} --- complete usage guide for
+    \texttt{SST\_Orbits/}, including every variable, every pitfall,
+    and self-contained Python recipes.
+  \item \texttt{docs/usage\_gradient\_SST.md} --- complete usage
+    guide for \texttt{gradients\_by\_period/}, including the
+    inferred coordinate grid, units, divisors, and the full
+    list of items the audit could not infer.
+\end{itemize}
+
+Both \texttt{.md} files are self-contained: an AI agent can be
+handed one (or both) and use it as the sole reference for accessing
+the data, without needing the broader \texttt{grep-dap} report
+context.
+
+\end{document}

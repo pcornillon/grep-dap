@@ -1,0 +1,400 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{amsmath}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  columns=fullflexible,
+  frame=single,
+  backgroundcolor=\color{gray!10},
+  showstringspaces=false
+}
+
+\title{URI OPeNDAP Test Case: Working Log}
+\author{Compiled for P. Cornillon}
+\date{2026-05-16}
+
+\begin{document}
+\maketitle
+
+\section*{Purpose}
+
+This file records commands, intermediate observations, and decisions
+made during the exploratory analysis of the URI OPeNDAP server at
+\url{https://sst-aqua.gso.uri.edu/opendap/}. Findings are written to
+\texttt{docs/uri\_test\_case.tex}; what lives here is the
+\emph{process}, including reasoning that did not make it into the
+findings document.
+
+Each section is timestamped. The session container reports UTC.
+
+\section{Prompt \#1 (2026-05-16 14:01 UTC)}
+
+\subsection{Instruction}
+
+\emph{``Read this document. Explore the contents of the URI OPeNDAP
+server. Describe the data and the metadata. Describe the data within
+the server and explain your reasoning. Be mindful of the overall
+project that we are working on. Spend up to 1 hour on this task.''}
+
+\subsection{Plan}
+
+\begin{enumerate}
+  \item Confirm the server is reachable. Identify the server software
+    (Hyrax vs.\ THREDDS vs.\ ERDDAP) and the protocol version (DAP2 /
+    DAP4) from the landing page and from probing
+    \texttt{.dmr}/\texttt{.dds} on a sample dataset.
+  \item Walk the top-level catalog. Note container names and
+    file-name patterns~--- since the project frames \texttt{grep-dap}
+    around inferring contents in the face of loose semantic
+    metadata, directory and file names are first-order signal.
+  \item For each \emph{publicly accessible} top-level container,
+    pick a representative dataset and pull its metadata (DMR if
+    DAP4, DDS+DAS otherwise). Record dimensions, shapes, dtypes,
+    attributes.
+  \item Pull small slices with \texttt{pydap} to sanity-check the
+    metadata (e.g.\ that a variable claiming Kelvin really sits near
+    275--310, that lat/lon really span $\pm$90 / $\pm$180).
+  \item Synthesize findings with explicit caveats about what is
+    inferred vs.\ stated.
+\end{enumerate}
+
+\subsection{Reachability and server identification}
+
+The landing page returns HTTP\,200 from \texttt{nginx}, and the body is
+a Hyrax-rendered \texttt{contents.html} (CSS \texttt{contents.css},
+logo \texttt{logo.png}, DAP4 + DAP2 link columns). So this is a
+\textbf{Hyrax} server. Both DAP4 and DAP2 endpoints are advertised on
+each leaf. The reverse-proxy URL exposes an internal port
+\texttt{:1512}, which suggests \texttt{nginx} terminating TLS in front
+of the Hyrax / BES backend.
+
+\begin{lstlisting}
+$ curl -sI https://sst-aqua.gso.uri.edu/opendap/
+HTTP/2 200
+server: nginx
+content-type: text/html
+content-description: dap_directory
+\end{lstlisting}
+
+\subsection{Top-level catalog walk}
+
+Seventeen entries at the root. Public reads succeed on two of them
+(\texttt{SST\_Orbits/}, \texttt{gradients\_by\_period/}); the rest
+return Hyrax 403 ``\emph{Not allowed to access
+/usr/share/hyrax/$\langle$dir$\rangle$/}'' --- i.e.\ filesystem
+permissions on the BES side, not an authentication challenge. The 403
+inventory tells us a lot anyway, because the names follow the URI
+group's well-known naming conventions.
+
+\begin{lstlisting}
+ROOT (HTTP code observed for contents.html):
+  @eaDir/                            -  (Synology NAS housekeeping, ignore)
+  JAXA_Orbits/                       403
+  JAXA_Orbits_OLD/                   403
+  MUR/                               403
+  RSS_Orbits/                        403
+  RSS_Orbits_OLD/                    403
+  RSS_Orbits_REALLY_OLD/             403
+  SST_Orbits/                        200  <-- public
+  gradients_by_period/               200  <-- public
+  gradients_by_period_5day/          403
+  iQuamBuoy/                         403
+  matchups/                          403
+  matchups_v2/                       403
+  matchups_v3/                       403
+  timeSeries/                        403
+  timeSeries_v2/                     403
+  timeSeries_v2_backup/              403
+\end{lstlisting}
+
+The two public branches behave very differently:
+\begin{itemize}
+  \item \texttt{SST\_Orbits/} is partitioned by year then month
+    (\texttt{2002}--\texttt{2024}, then \texttt{01}--\texttt{12}); the
+    leaves are NetCDF-4 files whose names encode the satellite, the
+    orbit number, the start time, and the processing tag:
+    \begin{quote}\ttfamily AQUA\_MODIS\_orbit\_115220\_\\20240101T011558\_L2\_SST-URI\_24-2.nc4\end{quote}
+    Each year contains 12 month subdirs; each month contains roughly
+    14 orbits/day $\times$ 28--31 days $\approx$ 400--430 files.
+    Approximate inventory: $\sim$23 years $\times$ 14.4 orbits/day
+    $\times$ 365 d $\approx$ \textbf{$\sim 1.2 \times 10^5$ orbit
+    files}.
+  \item \texttt{gradients\_by\_period/} is flat: 270 NetCDF files
+    \texttt{augmented\_monthly\_stats\_MM\_YYYY.nc} spanning
+    \texttt{01\_2003} through \texttt{12\_2024}, with a small surplus
+    over $22 \times 12 = 264$ that I have not chased down.
+\end{itemize}
+
+\subsection{Metadata fetch: SST\_Orbits sample}
+
+Picked the first orbit of 2024 (orbit 115220, $\sim$01:15:58 UTC,
+2024-01-01). DMR XML is 141\,lines of structure plus another
+$\sim$900\,lines of attributes; clearly DAP4.
+
+\begin{lstlisting}
+$ curl -s "$URL.dmr.xml" | head -120
+<?xml version="1.0" encoding="ISO-8859-1"?>
+<Dataset ... dapVersion="4.0" ...
+    <Dimension name="ny" size="40271"/>
+    <Dimension name="nx" size="1354"/>
+    <Dimension name="i"  size="5"/>
+    ...
+\end{lstlisting}
+
+Root variables (selected, after parsing the DMR with a small
+\texttt{re}-based script in \texttt{uri\_walk\_public.py}):
+
+\begin{itemize}
+  \item \texttt{SST\_In} (Int16, ny$\times$nx, scale\_factor 0.005,
+    units \texttt{C}, standard\_name
+    \texttt{sea\_surface\_temperature}).
+  \item \texttt{regridded\_sst} (Int16, ny$\times$nx, units \texttt{C},
+    standard\_name \texttt{masked\_sea\_surface\_temperature}).
+  \item \texttt{eastward\_gradient}, \texttt{northward\_gradient}
+    (Int32, ny$\times$nx, scale 0.0001, units \texttt{C/km},
+    standard\_name \texttt{eastward\_temperature\_gradient} /
+    \texttt{northward\_temperature\_gradient}).
+  \item \texttt{refined\_mask}, \texttt{qual\_sst} (Int8 quality /
+    flag arrays).
+  \item \texttt{latitude}, \texttt{longitude} (Int32 ny$\times$nx) ---
+    pixel locations. Note: the DMR does \emph{not} declare a
+    scale\_factor for these. Comparison with the Float32
+    \texttt{nadir\_latitude/longitude} (which is in degrees) shows
+    the Int32 lat/lon values are 1000$\times$ the degree value; the
+    implicit scale is 0.001. That is a metadata gap a client must
+    repair by inference.
+  \item \texttt{regridded\_latitude}, \texttt{regridded\_longitude}
+    --- same caveat.
+  \item Swath geometry: \texttt{left/right/nadir\_latitude},
+    \texttt{left/right/nadir\_longitude} (Float32, ny;
+    degrees\_north / degrees\_east).
+  \item \texttt{time\_from\_start\_orbit} (Float32, ny, seconds).
+  \item \texttt{DateTime} (Float64 scalar, seconds since 1970-01-01;
+    standard\_name \texttt{time}). For the sample file the value is
+    \texttt{1704071758.2 s} $\to$ 2024-01-01T01:15:58 UTC, matching
+    the filename exactly.
+  \item \texttt{region\_start}, \texttt{region\_end} (Int32, i=5) ---
+    presumably five along-orbit subregions (mid- vs.\ polar bands?).
+\end{itemize}
+
+The orbit file also carries two \texttt{Group}s:
+\begin{itemize}
+  \item \texttt{/Regrid\_to\_L2eqa/} --- companion fields regridded
+    to an L2 equal-area grid (its own \texttt{nxL2eqa},
+    \texttt{nyL2eqa}, plus \texttt{nxAMSR\_E}, \texttt{nyAMSR\_E}
+    dimensions). Variables include
+    \texttt{L2eqa\_MODIS\_SST}, \texttt{L2eqa\_MODIS\_std\_SST},
+    \texttt{L2eqa\_MODIS\_num\_SST}, and AMSR-E (microwave) wind
+    speed / water vapor / cloud liquid water / SST, plus
+    \texttt{MODIS\_SST\_on\_AMSR\_E\_grid} and
+    \texttt{convolved\_MODIS\_on\_AMSR\_E\_grid}. Reading this group
+    alongside the root makes the file a MODIS\,$\leftrightarrow$\,AMSR-E
+    co-located analysis product, not a vanilla L2 SST file.
+  \item \texttt{/contributing\_granules/} --- provenance: per-orbit
+    list of the source L2 granules that feed the orbit, with start
+    and end times, byte ranges, and filenames. Pure metadata, no
+    science.
+\end{itemize}
+
+Caveat to record for later: AMSR-E stopped producing data in October
+2011, so the AMSR-E-named variables in a 2024 orbit file are presumably
+all fill. The schema persists; the data should not. This needs
+verification with a small slice on a 2024 vs.\ a 2010 file before any
+claim is made in print.
+
+\subsection{Metadata fetch: gradients\_by\_period sample}
+
+Picked \texttt{augmented\_monthly\_stats\_07\_2020.nc} (July 2020).
+DMR is 141\,lines total \emph{including} all attributes --- much
+sparser than the orbit file. Dimensions \texttt{lon}=360,
+\texttt{lat}=180. 34 variables, all Float64 of shape (lon, lat).
+\textbf{Every variable in this dataset has zero attributes}. There are
+\emph{no} global (root) attributes. No
+\texttt{units}, no \texttt{long\_name}, no \texttt{standard\_name}, no
+\texttt{\_FillValue}, no conventions tag. No coordinate variables
+\texttt{lat} or \texttt{lon} are present --- only the dimensions of
+those names.
+
+This is the most striking finding so far and the most relevant to
+\texttt{grep-dap}'s reason for being: a dataset where everything one
+needs to know has to be inferred from \emph{structure plus names}
+alone. The variable naming is regular enough to be tractable:
+
+\begin{lstlisting}
+day_pixel_count                 night_pixel_count
+day_sum_SST                     night_sum_SST
+day_sum_SST_squared             night_sum_SST_squared
+day_as_pixel_count              night_as_pixel_count   # along-scan
+day_sum_grad_as_per_km          night_sum_grad_as_per_km
+day_sum_grad_as_per_km_squared  night_sum_grad_as_per_km_squared
+day_at_pixel_count              night_at_pixel_count   # along-track
+day_sum_grad_at_per_km          night_sum_grad_at_per_km
+day_sum_grad_at_per_km_squared  night_sum_grad_at_per_km_squared
+day_sum_grad_mag_per_km         night_sum_grad_mag_per_km
+day_sum_grad_mag_per_km_squared night_sum_grad_mag_per_km_squared
+day_sum_eastward_gradient       night_sum_eastward_gradient
+day_sum_eastward_gradient_squared night_sum_eastward_gradient_squared
+day_sum_northward_gradient      night_sum_northward_gradient
+day_sum_northward_gradient_squared night_sum_northward_gradient_squared
+day_sum_magnitude_gradient      night_sum_magnitude_gradient
+day_sum_magnitude_gradient_squared night_sum_magnitude_gradient_squared
+\end{lstlisting}
+
+The structural inference, written out:
+\begin{itemize}
+  \item Each variable is a (lon, lat) grid of size $360\times180$.
+    The dimension names alone are the strongest signal that this is
+    a $1^\circ \times 1^\circ$ global grid. \emph{Caveat:} no
+    coordinate variable names are present, so we cannot tell from
+    the metadata whether \texttt{lat} runs $-90 \to +90$ or the
+    reverse, nor whether \texttt{lon} is $0\to 360$ or $-180\to
+    +180$.
+  \item Day / night split is a strong hint that the upstream source
+    is satellite, and the gradient and SST quantities tie directly
+    to the variables in \texttt{SST\_Orbits/}. Day/night labels are
+    a standard MODIS-SST partition (Aqua's $\sim$13:30 local
+    ascending vs.\ $\sim$01:30 descending nodes).
+  \item For each gradient flavor we get $(\Sigma, \Sigma^2, N)$, the
+    canonical bookkeeping for computing means and variances after
+    aggregation across periods, locations, or both.
+  \item Three pixel-count flavors per period:
+    \begin{itemize}
+      \item \texttt{pixel\_count} --- valid SST pixels;
+      \item \texttt{as\_pixel\_count} --- valid \emph{along-scan}
+        gradient pixels (these can be invalid even when SST is valid,
+        e.g.\ swath-edge effects);
+      \item \texttt{at\_pixel\_count} --- valid \emph{along-track}
+        gradient pixels.
+    \end{itemize}
+    The fact that there are separate $N$'s for SST, for along-scan
+    gradients, and for along-track gradients confirms gradients are
+    masked more aggressively than SST itself.
+  \item The pair (\texttt{eastward\_gradient},
+    \texttt{northward\_gradient}) and the pair
+    (\texttt{grad\_as}, \texttt{grad\_at}) are two coordinate
+    systems for the same physical vector field --- swath-relative
+    (along/across scan) and geographic (east/north). The
+    \texttt{magnitude\_gradient} and \texttt{grad\_mag\_per\_km} are
+    the corresponding magnitudes. \emph{Caveat:} I have not yet
+    verified that \texttt{sum\_grad\_mag\_per\_km} equals
+    $\sqrt{\Sigma_{\rm east}^2 + \Sigma_{\rm north}^2}$ at the
+    pixel level vs.\ the cell level; the bookkeeping per cell is
+    almost certainly the sum of pixel magnitudes, not the magnitude
+    of summed components.
+\end{itemize}
+
+\subsection{Data sampling}
+
+Implemented in \texttt{scripts/uri\_sample\_data.py} and
+\texttt{scripts/uri\_sample\_equator.py}. Two reads against the orbit
+file (polar, equator) plus one full-grid read for the gradient file.
+Highlights:
+
+\begin{itemize}
+  \item Orbit polar sample at $i_0=20000$ (nadir $\sim 78\text{--}79^\circ$N,
+    Kara Sea region): \texttt{SST\_In} comes back $-15$ to $-3\,^\circ$C
+    when the raw Int16 is scaled by 0.005. The declared
+    \texttt{valid\_min/valid\_max} for \texttt{SST\_In} (raw) is
+    $-600/9000$, i.e.\ $-3$ to $45\,^\circ$C; values below $-3\,^\circ$C
+    are outside that valid range and should be treated as ice / land
+    / unconverged. Both \texttt{eastward\_gradient} and
+    \texttt{northward\_gradient} were entirely masked at this
+    latitude (\texttt{n=0} after \texttt{\_FillValue} removal).
+  \item Orbit equatorial sample at $i_0 \approx 29259$
+    (nadir $\sim 0^\circ$, longitude $\sim -7^\circ$E, off the
+    African coast): \texttt{SST\_In} in $[16.2, 29.0]\,^\circ$C,
+    mean $27.4$, std $1.7$. Both gradient components populate at
+    $\sim$20\,\% of pixels (1993 of 10000), with $|\nabla T|$
+    samples in $\pm 0.5\,^\circ$C/km, mean near zero --- realistic
+    for open tropical ocean.
+  \item Lat/lon Int32 values divided by 1000 reproduce the
+    Float32 \texttt{nadir\_latitude/longitude} to within $0.5^\circ$
+    over the sample. Confirms the inferred implicit scale of
+    $10^{-3}$ degree on the Int32 pixel coordinates.
+  \item \texttt{regridded\_sst} (Int16, scale 0.005) returns values
+    in $[26.8, 29.0]\,^\circ$C at the equator slice with fewer valid
+    pixels (3662 vs.\ 10000 for raw SST\_In), consistent with the
+    name suggesting a masked / re-gridded version.
+  \item Gradient stats file (July 2020):
+    \texttt{day\_pixel\_count} max $\sim$2.0$\times 10^5$ per
+    $1^\circ$ cell, consistent with $\sim$14 day-orbits $\times$
+    31 d $\times$ (pixel area / cell area). Per-cell mean SST
+    derived as $\Sigma_{\rm SST}/N_{\rm pix}$ shows NaN propagation
+    in some cells where \texttt{day\_sum\_SST} is NaN even though
+    \texttt{day\_pixel\_count} is finite; this is a fill-value
+    convention to resolve before any climatology is constructed
+    (likely some cells are NaN by design where SST sums underflow
+    or are flagged).
+  \item Per-cell mean magnitude gradient $\sim 0.083\,^\circ$C/km,
+    with a tail to $\sim 22\,^\circ$C/km. The tail is almost
+    certainly numerical (e.g.\ coast / cloud-edge dropouts). The
+    bulk is consistent with typical ocean SST gradients of
+    $0.01\text{--}0.5\,^\circ$C/km.
+\end{itemize}
+
+\subsection{Things that bit me / would bite anyone}
+
+\begin{itemize}
+  \item Recursive catalog walks against this server are slow:
+    individual \texttt{contents.html} requests take 0.5--2\,s, and
+    the year/month structure of \texttt{SST\_Orbits/} (yearly
+    pages are 20--30\,kB and the flat
+    \texttt{gradients\_by\_period/} index is 2.9\,MB) means even a
+    breadth-first walk at depth 2 with timeouts has to be sampled
+    aggressively. My first walk script timed out at 45\,s after
+    starting on the gradients directory; I refactored to walk the
+    branches individually and to cap samples.
+  \item Implicit scale on \texttt{latitude/longitude} (Int32 raw,
+    1000$\times$ degrees) is not in the DMR. Any client that
+    reads the orbit file naively gets garbage coordinates. This is
+    exactly the class of bug \texttt{grep-dap} should flag: a
+    declared \texttt{units=degrees\_north} on an Int32 with raw
+    magnitudes near $10^5$ is internally inconsistent unless an
+    implicit scale is assumed.
+  \item The 403 directories are quietly informative even when
+    blocked. The names alone partition into satellite-sensor
+    sources (\texttt{JAXA\_Orbits}, \texttt{RSS\_Orbits},
+    \texttt{MUR}), in-situ data (\texttt{iQuamBuoy}), matchup
+    products (\texttt{matchups[\_v2,\_v3]}), and time-series
+    products (\texttt{timeSeries[\_v2]}). \texttt{grep-dap} should
+    not throw away the names of unreadable directories: they are
+    part of the catalog signal.
+\end{itemize}
+
+\section{Process notes (carried forward)}
+
+\begin{itemize}
+  \item Variable / file names at URI's GSO Physical Oceanography
+    group have historically referred to satellite SST products
+    (PATHFINDER, AVHRR, GOES, MODIS-Aqua). The host name itself
+    (\texttt{sst-aqua}) and the file naming
+    (\texttt{AQUA\_MODIS\_orbit\_\dots\_L2\_SST-URI\_24-2.nc4})
+    confirm MODIS-Aqua SST. Expectation and evidence agree here,
+    but the project rule (\texttt{CLAUDE.md}: ``do not make up
+    data'') still requires me to record both separately.
+  \item For each claim about a variable I record whether it came
+    from (a) a directly-read attribute, (b) a structural inference
+    from the DMR, or (c) a statistical observation on a sampled
+    slice. In the findings document the same convention is enforced
+    with explicit Evidence tags.
+  \item Scripts that produced these results are checked in under
+    \texttt{scripts/}:
+    \texttt{uri\_root\_walk.py},
+    \texttt{uri\_walk\_public.py},
+    \texttt{uri\_walk\_sst\_orbits.py},
+    \texttt{uri\_sample\_data.py},
+    \texttt{uri\_sample\_equator.py}.
+\end{itemize}
+
+\section{Session timing}
+
+Started 2026-05-16 14:01\,UTC. Wrote final
+\texttt{uri\_test\_case.tex} and closed the log at
+2026-05-16 $\sim$14:25\,UTC. Within the one-hour budget.
+
+\end{document}

@@ -1,0 +1,190 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{amsmath}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  columns=fullflexible,
+  frame=single,
+  backgroundcolor=\color{gray!10},
+  showstringspaces=false
+}
+
+\title{URI OPeNDAP Test Case: Working Log (Prompt \#2)}
+\author{Compiled for P. Cornillon}
+\date{2026-05-16}
+
+\begin{document}
+\maketitle
+
+\section*{Purpose}
+
+Working log for Prompt~\#2 of the URI OPeNDAP test case. Findings
+themselves are in \texttt{docs/uri\_test\_case\_2.tex}; this file
+records process, command lines, decisions, and corrections to
+Prompt~\#1.
+
+\section{Prompt \#2 (2026-05-16 19:42 UTC)}
+
+\subsection{Instruction}
+
+\emph{``Generate a table for Readable Branch \#1: SST\_Orbits/. For
+each variable in the dataset, indicate whether the semantic
+(COARDS) metadata essential for using that variable are complete.
+If the metadata are complete, state that explicitly. If they are
+incomplete, list the missing COARDS metadata and provide your best
+guess for what the values should be. In addition, identify, again
+for each variable, any semantic metadata that are not strictly
+required by COARDS but that you believe would significantly
+facilitate use and interpretation of the dataset.''}
+
+\subsection{Re-reading Prompt \#1 outputs}
+
+The two files produced for Prompt~\#1
+(\texttt{docs/uri\_test\_case\_1.tex},
+\texttt{docs/test\_case\_uri\_log\_1.tex}) describe a Hyrax server
+with seventeen top-level containers, of which only
+\texttt{SST\_Orbits/} and \texttt{gradients\_by\_period/} are
+publicly readable. The orbit-file branch was characterized as
+``richly CF-annotated'' but two specific claims in those documents
+were wrong and are corrected below.
+
+\subsection{Corrections to Prompt \#1}
+
+\begin{enumerate}
+  \item Prompt~\#1 said the orbit DMR exposes no root-group
+    (global) attributes. \textbf{False.} A more careful parse of
+    the DMR (using a depth-aware regex walker, not a flat one)
+    finds 22 root-group attributes including
+    \texttt{title="Conditioned 1km (L2) MODIS AQUA SST"},
+    \texttt{Conventions="CF-1.5"}, \texttt{institution="University
+    of Rhode Island - Graduate School of Oceanography"},
+    \texttt{creator\_name="Peter Cornillon"},
+    \texttt{project="SST Fronts"}, and a full ACDD-style discovery
+    block. The earlier omission was an artifact of my flat-regex
+    DMR parser, which was treating attribute elements as if they
+    only appeared inside variable elements.
+  \item Prompt~\#1 said the Int32 \texttt{latitude} and
+    \texttt{longitude} variables in the orbit file declare
+    \texttt{units=degrees\_*} but do \emph{not} declare a
+    \texttt{scale\_factor}. \textbf{False.} Both variables do
+    carry \texttt{scale\_factor=0.001}, \texttt{add\_offset=0},
+    and corresponding \texttt{valid\_min/max} in the DMR. The
+    Int32 raw values \emph{do} need to be rescaled by $10^{-3}$
+    --- that conclusion was right --- but the file does say so
+    explicitly. Prompt~\#1's analysis script was failing to
+    capture more than the first few attributes per variable.
+\end{enumerate}
+
+I record these so that anything downstream that quotes Prompt~\#1
+on those two points knows to discard the claim.
+
+\subsection{Approach for Prompt \#2}
+
+\begin{enumerate}
+  \item Re-fetch the DMR for the representative orbit file
+    \begin{lstlisting}
+https://sst-aqua.gso.uri.edu/opendap/SST_Orbits/2024/01/
+  AQUA_MODIS_orbit_115220_20240101T011558_L2_SST-URI_24-2.nc4.dmr.xml
+    \end{lstlisting}
+    with a depth-aware parser
+    (\texttt{scripts/sst\_orbits\_dmr\_inventory.py}) that walks
+    every \texttt{<Group>} and emits, for every variable, every
+    attribute as \texttt{(name, type, value)}.
+  \item Score each variable against a deliberately strict reading
+    of COARDS:
+    \begin{itemize}
+      \item \texttt{units} present and UDUNITS-compliant;
+      \item \texttt{long\_name} present;
+      \item \texttt{\_FillValue} present (for non-scalar,
+        non-string data);
+      \item if either of \texttt{scale\_factor},
+        \texttt{add\_offset} is set, the other must be too;
+      \item if the variable is a latitude / longitude / time
+        axis, the \texttt{units} string must match the
+        COARDS-recognized form (e.g.\
+        \texttt{degrees\_north}; for time, \texttt{<unit> since
+        <reference>}).
+    \end{itemize}
+    The scorer is in
+    \texttt{scripts/sst\_orbits\_coards\_audit.py}; results are
+    persisted to \texttt{/tmp/sst\_audit.json} so that the
+    findings table can be regenerated without re-fetching.
+  \item For each variable, also collect \emph{non-COARDS}
+    recommendations (CF/ACDD-style attributes that would help
+    interpretation: \texttt{coordinates},
+    \texttt{ancillary\_variables}, \texttt{cell\_methods},
+    \texttt{flag\_values/flag\_meanings}, \texttt{axis},
+    \texttt{calendar}, \texttt{source}, instrument provenance
+    notes).
+  \item Compose the assessment into
+    \texttt{docs/uri\_test\_case\_2.tex} as three per-group
+    tables (root, \texttt{/Regrid\_to\_L2eqa},
+    \texttt{/contributing\_granules}).
+\end{enumerate}
+
+\subsection{Commands}
+
+\begin{lstlisting}
+# 1. Pull the DMR XML and parse it
+python3 scripts/sst_orbits_dmr_inventory.py > /tmp/sst_inv.json
+
+# 2. Run the COARDS scorer + recommendation generator
+python3 scripts/sst_orbits_coards_audit.py
+# -> writes /tmp/sst_audit.json
+\end{lstlisting}
+
+\subsection{Headline numbers}
+
+Of the 44 atomic variables across the three groups of the orbit
+file, the strict scorer marks \textbf{21 Complete} and
+\textbf{23 Incomplete} for COARDS. The breakdown by group:
+
+\begin{lstlisting}
+/                              11 / 20 complete
+/Regrid_to_L2eqa                9 / 17 complete
+/contributing_granules          1 /  7 complete
+\end{lstlisting}
+
+The largest single contributor to ``Incomplete'' status is the use
+of the units string \texttt{"C"} (and \texttt{"C/km"}) where
+UDUNITS-compatible code would expect \texttt{degree\_Celsius}
+(\texttt{degree\_Celsius km-1}). That single substitution would
+close out 15 of the 23 incomplete entries. The remaining 8 are:
+two \texttt{region\_start/end} arrays with no units at all, three
+\texttt{contributing\_granules} index arrays with no units, two
+\texttt{start\_time/end\_time} arrays whose \texttt{units="seconds"}
+lack a reference epoch, and the scalar \texttt{DateTime} which has
+the same problem.
+
+\subsection{Limitations of the audit}
+
+\begin{itemize}
+  \item The scorer treats \texttt{long\_name} as required even
+    though COARDS only \emph{recommends} it. This makes the
+    threshold a little stricter than the literal standard but
+    keeps the table useful as a checklist.
+  \item Some files in the SST\_Orbits/ branch may have been
+    re-processed since this sample (the sample's
+    \texttt{date\_created} is 2025-05-17). Different epochs may
+    carry slightly different attribute sets; everything below
+    refers to the specific sample file unless otherwise noted.
+  \item The audit does not look at \emph{values} except for unit
+    mislabellings I noticed (\texttt{L2eqa\_AMSR\_E\_wind\_speed}
+    declared \texttt{units="mm"} while its packing is consistent
+    with $\text{m s}^{-1}$;
+    \texttt{L2eqa\_MODIS\_num\_SST} declared \texttt{units="C"}
+    while it is plainly a count). A proper audit would compare
+    sampled values against the declared range.
+\end{itemize}
+
+\subsection{Session timing}
+
+Started 2026-05-16 19:42\,UTC. Closed log 2026-05-16
+$\sim$20:05\,UTC.
+
+\end{document}

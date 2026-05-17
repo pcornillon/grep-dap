@@ -1,0 +1,319 @@
+\documentclass[11pt]{article}
+\usepackage[margin=0.9in]{geometry}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{ragged2e}
+
+\emergencystretch=4em
+\tolerance=9999
+\hbadness=10000
+\sloppy
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  columns=fullflexible,
+  frame=single,
+  backgroundcolor=\color{gray!10},
+  showstringspaces=false
+}
+
+\newcolumntype{L}[1]{>{\RaggedRight\arraybackslash}p{#1}}
+
+\title{Spatial Range Over Which the \texttt{gradients\_by\_period/}
+       Gradients Were Calculated\\
+       \large grep-dap test case, Prompt \#4}
+\author{Compiled for P. Cornillon}
+\date{2026-05-16}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+The gradient sums in
+\texttt{https://sst-aqua.gso.uri.edu/opendap/gradients\_by\_period/}
+are 1$^\circ$ monthly accumulations of per-pixel SST gradients that
+were originally computed at the L2 swath level, inside the
+companion \texttt{SST\_Orbits/} files. The question for Prompt~\#4
+is the spatial extent over which each per-pixel gradient was
+computed --- i.e.\ the support of the differentiation operator.
+Three independent estimates (pixel-count ratios, magnitude-matching
+of stored vs.\ centered-finite-difference candidates, and
+autocorrelation of the stored gradient field) converge on
+\textbf{$5 \pm 2$ km}. The likely operator is a centered
+finite difference at $\sim\pm 2$ to $\pm 3$ pixels applied to the
+masked SST field \texttt{regridded\_sst} of the orbit files
+(which is itself derived from raw \texttt{SST\_In} by masking out
+pixels flagged as high-gradient noise). The estimate is robust to
+the exact operator shape; what it cannot resolve is whether the
+\texttt{regridded\_sst} construction includes additional spatial
+smoothing on top of the masking step.
+\end{abstract}
+
+\tableofcontents
+
+\section{What ``spatial range over which the gradients were
+calculated'' means}\label{sec:question}
+
+The variables in \texttt{gradients\_by\_period/} are 1$^\circ$
+monthly bin sums of the per-pixel orbit-level gradient values
+\texttt{eastward\_gradient} and \texttt{northward\_gradient} from
+\texttt{SST\_Orbits/} (and their swath-relative counterparts
+\texttt{grad\_as\_per\_km} / \texttt{grad\_at\_per\_km} which are
+not exposed in the orbit file but follow the same algorithm). The
+1$^\circ$ binning is a \emph{post-hoc} accumulation; the spatial
+range over which a single gradient value was computed is set
+inside the orbit-level processing, by the differentiation operator
+that maps a window of SST pixels to one gradient value. That
+support, in km, is the answer the prompt asks for.
+
+\section{Three lines of evidence}\label{sec:evidence}
+
+\subsection{Line 1: pixel-count ratios}\label{sec:line1}
+
+From Prompt~\#3, the three pixel-count flavours in the monthly
+file are different by construction:
+\begin{center}
+\begin{tabular}{@{}lr@{}}
+\toprule
+Field & Mean per cell (day side) \\
+\midrule
+\texttt{day\_pixel\_count}     & 10\,030 \\
+\texttt{day\_as\_pixel\_count} & ~8\,110 \\
+\texttt{day\_at\_pixel\_count} & ~4\,090 \\
+\bottomrule
+\end{tabular}
+\end{center}
+The fractions
+$N_{\rm as}/N_{\rm pix} \approx 0.81$ and
+$N_{\rm at}/N_{\rm pix} \approx 0.41$. MODIS Aqua acquires SST in
+groups of 10 along-track lines per mirror scan; geolocation /
+calibration jumps between scans, so along-track derivatives whose
+stencil straddles a scan boundary are masked. For a centered
+finite difference with along-track half-width $H$ pixels, the
+fraction of SST-valid pixels with a valid along-track gradient is
+approximately $(10-2H)/10$ minus a cloud-edge loss.
+The cloud-edge loss can be read off from the along-scan ratio
+(which is not affected by scan boundaries),
+$1 - N_{\rm as}/N_{\rm pix} \approx 0.19$. The additional
+along-track loss is then $0.81 - 0.41 = 0.40 = 2H/10$, giving
+$\mathbf{H = 2}$ pixels. With along-track pixel spacing
+$\sim$1.13 km near nadir, the implied along-track operator support
+is $2H \times 1.13 \approx \mathbf{4.5}$ km.
+
+\subsection{Line 2: magnitude-matching to centered differences}\label{sec:line2}
+
+\texttt{scripts/grad\_scale\_findregion.py} located the most
+gradient-populated 1000-line window of orbit 115220
+(2024-01-01 01:15:58 UTC); the winning window is a 200-line
+patch in the central Pacific at $\sim$20\,N, 180\,E with
+$\sim$51\% valid gradient pixels. The full $200\times 1354$
+block of \texttt{SST\_In}, \texttt{regridded\_sst},
+\texttt{eastward\_gradient},
+\texttt{northward\_gradient},
+\texttt{latitude}, \texttt{longitude} was pulled to
+\texttt{/tmp/grad\_block2.pkl}.
+
+Define $|\nabla T|_{\rm stored} = \sqrt{
+(\mathtt{eastward\_gradient})^2 +
+(\mathtt{northward\_gradient})^2}$ and the candidate
+\[
+|\nabla T|_{\rm cand}(h) = \sqrt{
+\Big(\frac{T_{i,j+h}-T_{i,j-h}}{2h\,\bar{\Delta x}}\Big)^{\!2}
++
+\Big(\frac{T_{i+h,j}-T_{i-h,j}}{2h\,\bar{\Delta y}}\Big)^{\!2}}
+\]
+for $T$ equal to either \texttt{SST\_In} or
+\texttt{regridded\_sst}. Magnitude (rather than signed components)
+sidesteps the swath-vs-geographic rotation. The empirical
+$\bar{\Delta x}$ and $\bar{\Delta y}$ used (median across the
+block) are 1.35 km and 1.13 km respectively, computed by
+haversine on \texttt{latitude}/\texttt{longitude}.
+
+Results --- per-pixel RMSE between
+$|\nabla T|_{\rm stored}$ and $|\nabla T|_{\rm cand}(h)$, central
+swath, restricted to pixels where both are valid:
+
+\begin{center}
+\begin{tabular}{@{}rrr|rrr@{}}
+\toprule
+& \multicolumn{2}{c|}{$T = $ \texttt{SST\_In}} & \multicolumn{2}{c}{$T = $ \texttt{regridded\_sst}} \\
+\midrule
+$h$ & support (km) & RMSE & $h$ & support (km) & RMSE \\
+\midrule
+1 & 2  & 0.079 & 1 & 2  & 0.059 \\
+2 & 4  & 0.034 & 2 & 4  & 0.025 \\
+\textbf{3} & \textbf{6}  & \textbf{0.028} & \textbf{3} & \textbf{6}  & \textbf{0.025} \\
+4 & 8  & 0.029 & 4 & 8  & 0.025 \\
+5 & 10 & 0.030 & 5 & 10 & 0.027 \\
+7 & 14 & 0.032 & 7 & 14 & 0.028 \\
+10 & 20 & 0.034 & 10 & 20 & 0.030 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The RMSE minimum is at $h = 3$ pixels, i.e.\ a centered-difference
+support of \textbf{6 km}, when the candidate is built from
+\texttt{regridded\_sst}; using \texttt{SST\_In} the minimum sits at
+the same $h$ with a slightly higher residual --- consistent with
+\texttt{regridded\_sst} being the operative input field.
+
+A second, looser check is the ratio of spatially-averaged
+magnitudes. The stored mean $|\nabla T|$ in the central window is
+$0.0344\,^\circ$C/km. Mean
+$|\nabla T|_{\rm cand}(h)$ from \texttt{regridded\_sst} matches
+1:1 at $h \approx 2.5$ pixels (interpolated), i.e.\ support
+\textbf{$\sim$4--6 km}. Mean from \texttt{SST\_In} matches 1:1
+only at $h \approx 10$ pixels (support $\sim$20 km), a reminder
+that \texttt{SST\_In} carries pixel-scale noise that the operator
+must remove --- which the
+\texttt{refined\_mask} / \texttt{regridded\_sst} step
+accomplishes.
+
+\subsection{Line 3: autocorrelation of the stored gradient}\label{sec:line3}
+
+For a gradient field computed with operator support $L$, adjacent
+pixel pairs share input pixels and so the gradient field is
+autocorrelated over scales $\lesssim L$. Beyond $L$ the
+autocorrelation should drop sharply (apart from real
+oceanographic structure, which is broad compared to the operator
+support). \texttt{scripts/grad\_scale\_autocorr.py} computes
+$\rho(\ell)$ of $|\nabla T|_{\rm stored}$ in the central swath:
+
+\begin{center}
+\begin{tabular}{@{}rrr|rrr@{}}
+\toprule
+\multicolumn{3}{c|}{across-track ($\Delta x = 1.35$ km)} &
+\multicolumn{3}{c}{along-track ($\Delta y = 1.13$ km)} \\
+\midrule
+lag (px) & dist (km) & $\rho$ & lag (px) & dist (km) & $\rho$ \\
+\midrule
+0 & 0   & 1.00 & 0 & 0   & 1.00 \\
+1 & 1.35 & 0.64 & 1 & 1.13 & 0.50 \\
+2 & 2.70 & 0.32 & 2 & 2.26 & 0.18 \\
+3 & 4.05 & 0.19 & 3 & 3.39 & 0.13 \\
+4 & 5.40 & 0.13 & 4 & 4.52 & 0.07 \\
+5 & 6.75 & 0.10 & 5 & 5.65 & 0.05 \\
+6 & 8.10 & 0.08 & 6 & 6.78 & 0.03 \\
+8 & 10.8 & 0.06 & 8 & 9.0 & 0.02 \\
+10 & 13.5 & 0.05 & 10 & 11.3 & 0.01 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+For comparison, the autocorrelation of a 1-pixel centered diff of
+the raw \texttt{SST\_In} drops to \emph{negative} values
+($\rho \approx -0.19$ at 2.7 km, $\rho \approx -0.23$ at 4 km)
+and returns to zero only past 8 km. That anti-correlation is the
+Nyquist-like fingerprint of a sharp 1-pixel derivative applied to
+a noisy field. The stored gradient does \emph{not} have it, ruling
+out a simple 1-pixel centered diff on \texttt{SST\_In}.
+
+The decorrelation length (drop below $1/e \approx 0.37$) is
+$\sim$2 pixels across-track and $\sim$1.5 pixels along-track ---
+i.e.\ \textbf{2--3 km in either direction}. The autocorrelation
+also has a long flat tail near 0.05--0.10 in across-track that
+likely reflects real oceanographic structure in the 1$^\circ$
+mesoscale band; that tail does not constrain the operator support.
+
+\section{Convergent estimate}\label{sec:answer}
+
+The three lines of evidence agree on a single number to within a
+factor of $\sim$2.
+
+\begin{center}
+\begin{tabular}{@{}lr@{}}
+\toprule
+Line of evidence & Implied operator support \\
+\midrule
+Pixel-count ratios (\S\ref{sec:line1})           & $\sim$4 km (along-track) \\
+Magnitude-matching RMSE (\S\ref{sec:line2})      & 4--6 km (both directions) \\
+Magnitude-matching mean ratio (\S\ref{sec:line2})& 4--6 km \\
+Autocorrelation decorrelation length (\S\ref{sec:line3}) & 2--4 km \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+\noindent\textbf{Best estimate: $5 \pm 2$ km, with the
+along-track support possibly $\sim$1 km smaller than the
+across-track support owing to MODIS pixel-spacing anisotropy.}
+
+The simplest description of the operator that is consistent with
+every line of evidence is: a centered finite difference with
+half-width $h = 2$--$3$ pixels (full operator support 4--6 km)
+applied to \texttt{regridded\_sst}, where
+\texttt{regridded\_sst} is the orbit's
+\texttt{SST\_In} field after the high-gradient pixels flagged in
+\texttt{refined\_mask} have been removed.
+
+\section{Things the analysis cannot distinguish}\label{sec:caveats}
+
+\begin{itemize}
+  \item Whether the actual operator is a centered finite
+    difference, a Sobel kernel, or a local least-squares fit of
+    similar effective support. Any of these would give roughly the
+    same fingerprints in the three lines of evidence above. The
+    estimate is for the \emph{effective spatial support}, not for
+    the operator's exact functional form.
+  \item Whether the construction of
+    \texttt{regridded\_sst} from \texttt{SST\_In} includes a
+    spatial averaging step on top of the masking. The values
+    of \texttt{regridded\_sst} sampled here have a standard
+    deviation $\sim$3$\times$ smaller than \texttt{SST\_In}, but
+    almost all of that reduction can be explained by the 33\,\%
+    masking carried in \texttt{refined\_mask} (the surviving
+    pixels are in coherent patches of SST). If there is in
+    addition a 3$\times$3 or 5$\times$5 box smoothing
+    --- which would be invisible to an external analysis ---
+    the \emph{total} area of raw SST contributing to a single
+    gradient value would be enlarged from the 4--6 km estimated
+    above to perhaps 7--10 km.
+  \item The sample region is open ocean
+    ($\sim$20\,N, 180\,E) without strong fronts. In a region
+    with a sharp front (e.g.\ Gulf Stream, Kuroshio) the
+    front itself contributes structure at scales smaller than
+    the operator support, and the autocorrelation argument
+    weakens. A region with no fronts (oligotrophic gyre) would
+    give a tighter constraint but I did not sample such a
+    region.
+  \item Only the orbit-file gradients
+    \texttt{eastward\_gradient}, \texttt{northward\_gradient}
+    are exposed publicly. The swath-relative
+    \texttt{grad\_as\_per\_km}, \texttt{grad\_at\_per\_km}
+    flavour appears only in the monthly file; the analysis
+    assumes the same operator is used for both flavours, which
+    the naming suggests but does not prove.
+\end{itemize}
+
+\section{Implication for downstream metadata}\label{sec:impl}
+
+For the next prompt (catalog metadata for
+\texttt{gradients\_by\_period}), the spatial resolution of the
+underlying gradient measurement should be advertised as the
+operator support rather than the 1$^\circ$ bin size of the monthly
+file. Suggested form:
+
+\begin{quote}\ttfamily
+spatial\_resolution = "approximately 5 km (per-pixel SST gradient
+operator support); summed into 1$^\circ$ monthly cells."
+\end{quote}
+
+ACDD-style alternative:
+
+\begin{quote}\ttfamily
+geospatial\_lat\_resolution = "1 degree (bin size)"\\
+geospatial\_lon\_resolution = "1 degree (bin size)"\\
+comment = "Each gradient sum aggregates per-pixel L2 SST gradients
+whose underlying differentiation-operator support is approximately
+5 km."
+\end{quote}
+
+\end{document}

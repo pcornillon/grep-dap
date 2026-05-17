@@ -1,0 +1,474 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{booktabs}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  columns=fullflexible,
+  frame=single,
+  backgroundcolor=\color{gray!10},
+  showstringspaces=false
+}
+
+\title{OPeNDAP and pydap: A Working Summary\\
+       \large grep-dap study phase, Prompt \#1}
+\author{Compiled for P. Cornillon}
+\date{2026-05-16}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+This document summarizes OPeNDAP (the Data Access Protocol, or DAP) and
+the \texttt{pydap} Python client, with emphasis on the three aspects
+that matter for inferring the contents of a remote OPeNDAP server:
+\emph{metadata}, \emph{data retrieval}, and \emph{subsetting}. The
+intent is to give \texttt{grep-dap} a precise, mechanical understanding
+of what an OPeNDAP server exposes, how that exposure differs between
+DAP2 and DAP4, and how \texttt{pydap} surfaces those exposures to a
+Python program. Where the underlying documentation flags details as
+out-of-date or fragile, the same caveats are repeated here.
+\end{abstract}
+
+\section{What OPeNDAP is, briefly}
+
+OPeNDAP is a client--server protocol for remote access to scientific
+datasets. A server publishes datasets at URLs; a client constructs a
+URL that names a dataset and, optionally, a \emph{constraint
+expression} that restricts what the server should compute and return.
+The on-wire payloads are \emph{compressed}, the data are
+\emph{remotely subset before transmission}, and the protocol enforces a
+rigid syntactic description of dataset structure while leaving
+semantic description (units, provenance, long names, conventions)
+largely unconstrained. The asymmetry is intentional: it lowered the
+barrier to publication at the cost of letting semantic metadata vary
+from complete to absent across servers~--- which is the very problem
+that motivates \texttt{grep-dap}.
+
+Two versions of the protocol coexist in deployment:
+\begin{description}[leftmargin=2em,style=nextline]
+  \item[DAP2 (\textasciitilde 1993--2010s).] The original protocol.
+    Carries a flat data model with arrays, \texttt{Grid}s (an array
+    bundled with its coordinate axes), \texttt{Structure}s, and
+    \texttt{Sequence}s. No groups. No 64-bit integers. Two metadata
+    documents: \emph{DDS} (structure) and \emph{DAS} (attributes).
+    Binary data extension is \texttt{.dods}.
+  \item[DAP4 (2016--).] Jointly specified by OPeNDAP, Inc.\ and
+    Unidata. Roughly a superset of DAP2 \emph{except} that
+    \texttt{Grid} is replaced by an array with shared dimensions and
+    \texttt{Map}s. Adds \texttt{Group}s (NetCDF-4 / HDF5--style
+    hierarchy), fully qualified names (FQNs), 64-bit integers,
+    \texttt{Opaque}, \texttt{Enum}, chunked HTTP/1.1 transfer, and
+    checksums. One metadata document: \emph{DMR} (Dataset Metadata
+    Response). Binary data extension is \texttt{.dap}.
+\end{description}
+
+A DAP4-capable server (Hyrax, modern THREDDS) generally also speaks
+DAP2 by flattening or translating. The translation can fail: if a
+dataset contains a type DAP2 cannot represent (e.g.\ \texttt{Int64}),
+the DAP2 response is an HTTP 400 error explaining as much.
+
+Two server implementations dominate:
+\texttt{Hyrax} (OPeNDAP, Inc.) and \texttt{THREDDS} / \texttt{TDS}
+(Unidata). Many NASA Earthdata holdings sit behind Hyrax; CMIP6 and
+many academic/agency archives sit behind THREDDS. ERDDAP, while not a
+DAP server in the strict sense, exposes a DAP-compatible endpoint
+(\texttt{tabledap}, \texttt{griddap}) that \texttt{pydap} can read.
+
+\section{Metadata}
+
+For \texttt{grep-dap}, metadata is the first thing on the wire and the
+cheapest thing to fetch. Understanding which document a server returns
+and what it contains is the foundation of everything else.
+
+\subsection{The shape of a DAP URL}
+
+Every OPeNDAP dataset is addressable as a base URL. Appending a known
+extension selects a \emph{response} from that dataset. The most useful
+extensions, by protocol:
+
+\begin{center}
+\begin{tabular}{@{}lllp{0.45\linewidth}@{}}
+\toprule
+Ext. & Protocol & Content & Notes \\
+\midrule
+\texttt{.dds}      & DAP2 & Structure (text)              & ``Dataset Descriptor Structure''~--- shapes, types, hierarchy. \\
+\texttt{.das}      & DAP2 & Attributes (text)             & ``Dataset Attribute Structure''~--- semantic metadata. \\
+\texttt{.dods}     & DAP2 & Headers + binary              & Carries the actual data. \\
+\texttt{.ascii} / \texttt{.asc} & DAP2 & ASCII data        & Human-readable data dump. \\
+\texttt{.html}     & either & Data Request Form           & The browser form for building constraint expressions. \\
+\texttt{.dmr}      & DAP4 & DMR (XML)                     & ``Dataset Metadata Response''~--- structure + attributes in one document. \\
+\texttt{.dmr.xml}  & DAP4 & DMR (XML, explicit)           & Same content, explicit MIME. \\
+\texttt{.dmr.html} & DAP4 & DMR rendered                  & Browser-friendly view of the DMR. \\
+\texttt{.dap}      & DAP4 & Headers + binary (chunked)    & Carries the actual data; supports checksums. \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+A reasonable rule of thumb when probing an unfamiliar URL:
+\begin{enumerate}
+  \item Append \texttt{.dmr} (or \texttt{.dmr.html}) and try. If you
+    get back XML or a rendered page, the server speaks DAP4 and you
+    should prefer it.
+  \item If \texttt{.dmr} 404s, append \texttt{.dds} and \texttt{.das};
+    if those return, the server is DAP2-only.
+  \item For a THREDDS URL the path segment \texttt{dodsC} indicates a
+    DAP2 endpoint; replacing it with \texttt{dap4} gives the DAP4
+    endpoint when one exists.
+\end{enumerate}
+
+\subsection{DAP2 metadata: DDS + DAS}
+
+DAP2 splits structure and attributes:
+
+\textbf{DDS (Dataset Descriptor Structure)} is a small text document
+that names variables, their data types
+(\texttt{Byte}, \texttt{Int16}, \texttt{UInt16}, \texttt{Int32},
+\texttt{UInt32}, \texttt{Float32}, \texttt{Float64}, \texttt{String},
+\texttt{URL}), and their shape. Container types are
+\texttt{Structure}, \texttt{Sequence}, and \texttt{Grid}. A
+\texttt{Grid} bundles an N-D array with N 1-D ``map'' arrays giving
+its coordinate axes; this lets a Grid be self-describing in the way
+NetCDF intends.
+
+\textbf{DAS (Dataset Attribute Structure)} is a parallel text document
+listing attributes attached to each variable and to the dataset as a
+whole. The DAS is where \texttt{units}, \texttt{long\_name},
+\texttt{standard\_name}, \texttt{\_FillValue}, \texttt{valid\_range},
+provenance strings, CF convention tags, and arbitrary free-text
+metadata live. The DAS is rigid in syntax only; its keys and values
+are entirely at the data provider's discretion. \emph{This is where
+OPeNDAP's loose semantic constraints live.}
+
+\subsection{DAP4 metadata: the DMR}
+
+DAP4 collapses DDS and DAS into a single XML document, the DMR. The
+DMR adds:
+\begin{itemize}
+  \item \texttt{Group}s, which may be nested. A dataset always has a
+    root group. Each group can hold its own variables, dimensions,
+    and attributes. Groups have a single parent (no cycles).
+  \item Shared \emph{dimensions} declared once at the group level and
+    referenced by variables. Variables list their dimensions, by
+    name, in order.
+  \item \emph{Fully qualified names} of the form
+    \texttt{/group/subgroup/var} that uniquely identify a variable
+    regardless of name collisions in sibling groups.
+  \item Atomic types missing from DAP2:
+    \texttt{Int64}, \texttt{UInt64}, \texttt{Enum}, \texttt{Opaque}.
+  \item \texttt{Map}s: a variable can declare which other variables
+    serve as its coordinate axes, recovering DAP2's
+    \texttt{Grid}-style self-description without bundling.
+\end{itemize}
+Because the DMR carries both structure and attributes, a single
+\texttt{HTTP GET} of \texttt{.dmr} gives a client everything it needs
+to introspect a dataset without touching the data.
+
+\subsection{Information available even when semantic metadata is poor}
+
+Even when a DAS or DMR carries only a sparse set of attributes, an
+inspecting client has the following to work with:
+\begin{itemize}
+  \item The variable \emph{names} themselves (\texttt{SST},
+    \texttt{analysed\_sst}, \texttt{lat\_ph}, \texttt{u\_wind}, \ldots).
+  \item Dimension names and ordering.
+  \item Variable shapes; a 2-D field over (lat, lon) is shaped
+    differently from a 1-D trajectory or a tabular sequence.
+  \item Data types (a \texttt{Float32} 3-D field is structurally
+    different from an \texttt{Int8} mask).
+  \item Group structure and file/directory hierarchy.
+  \item Whatever attributes are present (often at least
+    \texttt{units}, \texttt{\_FillValue}, and perhaps a
+    \texttt{long\_name} or \texttt{standard\_name}).
+  \item The dataset's neighbors on the same server (via catalog
+    pages), which give context.
+  \item Small samples of the data, fetched via subsetting (next
+    section), from which statistical and structural properties can
+    be estimated cheaply.
+\end{itemize}
+
+\section{Data retrieval}
+
+A DAP server returns data only in response to a request that names
+the variables (and slices) wanted. The binary response is
+\texttt{.dods} for DAP2 and \texttt{.dap} for DAP4. Each binary
+response is preceded by an inline copy of the metadata describing
+exactly what is in the payload (so a client never has to guess), then
+the binary blob. DAP4 chunks the binary using HTTP/1.1 transfer
+encoding and may include CRC-style checksums; DAP2 sends one
+unchunked binary blob and has no checksum mechanism.
+
+\subsection{The constraint expression}
+
+A constraint expression (CE) is appended to the data URL with
+\texttt{?} and tells the server what to compute. A request with no CE
+asks for the entire dataset~--- almost always wrong for big files.
+
+\textbf{DAP2 CE syntax} (variable projection plus optional sequence
+selection):
+\begin{lstlisting}
+data_url?<var1>[i0:s:i1][j0:s:j1]...,<var2>...&<filter1>&<filter2>...
+\end{lstlisting}
+The square-bracketed triples are start, stride, end (\emph{inclusive}
+in DAP2; this surprises people coming from Python). Filters apply to
+\texttt{Sequence}s and look like \texttt{seq.profile\_id=5}.
+
+\textbf{DAP4 CE syntax} (named parameter, FQNs, shared dimensions):
+\begin{lstlisting}
+data_url?dap4.ce=<FQN1>[i0:s:i1];<FQN2>[i0:s:i1];...
+\end{lstlisting}
+Note: \emph{semicolons separate variables in DAP4}, not commas.
+DAP4 hyperslab indices are \texttt{[start:stride:stop]} but
+\emph{stop is exclusive} in some server implementations and inclusive
+in others~--- in practice, stop is treated as the last index to
+include, matching DAP2. Always check with a tiny request.
+
+\textbf{Shared-dimension CE in DAP4} (often what you actually want):
+\begin{lstlisting}
+data_url?dap4.ce=<FQN_dim1>=[i0:s:i1];<FQN_dim2>=[j0:s:j1];<FQN_var1>;<FQN_var2>;...
+\end{lstlisting}
+The dimension slices are defined once with \texttt{=}, and any listed
+variable that uses those dimensions inherits the slice. This is far
+less error-prone than restating the hyperslab on every variable.
+
+\subsection{Server-side functions}
+
+DAP servers may expose named functions that the client can invoke as
+part of the CE; Hyrax, for example, exposes \texttt{geogrid} for
+lat/lon bounding-box subsets in geographic coordinates rather than
+index space. There is no standard discovery mechanism for these
+functions; a client either knows the function exists (out-of-band) or
+does not use it.
+
+\subsection{What ``compressed and sent'' actually means}
+
+The DAP2 \texttt{.dods} payload is the requested variables, with their
+DDS prepended, serialized in XDR-like network byte order. The DAP4
+\texttt{.dap} payload is similar but chunked, with the DMR for the
+constrained dataset prepended and optional CRC checksums per chunk.
+HTTP-level compression (\texttt{Accept-Encoding: gzip,deflate}) is
+applied on top of either; clients negotiate this with the server in
+the normal way.
+
+\section{Subsetting}
+
+Subsetting is the single most important capability OPeNDAP provides
+\texttt{grep-dap}: a client can pull a few representative slices of a
+remote variable at low cost, without downloading the full archive.
+Three kinds of subset matter:
+
+\paragraph{Variable subsetting.} List only the variables you want by
+name. Under DAP4, list them by FQN. This alone can reduce a 1\,GB
+file to a 1\,kB response if you only want one column, and~--- as the
+pydap docs emphasize~--- it is much cheaper than fetching everything
+and dropping variables client-side, because the server returns a
+\emph{constrained DMR} containing only the requested variables.
+
+\paragraph{Hyperslab subsetting (gridded data).} For each multi-dim
+variable, append \texttt{[start:stride:stop]} per axis. Strided reads
+work; non-contiguous reads do not (you must issue separate requests).
+For shared-dimension datasets in DAP4, prefer the shared-dimension
+form above.
+
+\paragraph{Selection / filtering (sequence data).} For tabular data
+in DAP2 \texttt{Sequence}s, expressions like \texttt{seq.depth\&seq.temp\&seq.profile\_id=5}
+project two columns and filter rows. DAP4 has analogous semantics for
+its sequence-like types but the conventions are still in flux; check
+the server.
+
+\paragraph{What about repeated holes?} OPeNDAP does not have a native
+``random list of indices'' subset operator. The two ways forward are
+(a) repeated single-element CEs, or (b) a bounding hyperslab plus
+client-side masking; \texttt{pydap}/\texttt{xarray} use the latter.
+
+\section{pydap: the Python client}
+
+\texttt{pydap} is a pure-Python DAP client (and, separately, a server,
+which is not the concern of \texttt{grep-dap}). As of version 3.5+ it
+uses Python \texttt{requests} for transport, supports
+\texttt{requests\_cache} for caching, covers most of the DAP2 and DAP4
+data models, and is being developed by members of the OPeNDAP team
+with coordination with Unidata.
+
+\subsection{Opening a dataset}
+
+\begin{lstlisting}[language=Python]
+from pydap.client import open_url
+
+# DAP2 (current default; subject to change)
+ds = open_url("http://test.opendap.org/opendap/data/nc/coads_climatology.nc")
+
+# DAP4 (recommended for modern servers)
+ds = open_url("http://test.opendap.org/opendap/data/nc/coads_climatology.nc",
+              protocol="dap4")
+
+# Caching session (avoids re-fetching the DMR)
+from pydap.net import create_session
+session = create_session(use_cache=True)
+ds = open_url(url, protocol="dap4", session=session)
+\end{lstlisting}
+
+\texttt{open\_url} fetches the metadata document (DDS+DAS for DAP2,
+DMR for DAP4) and constructs a \texttt{DatasetType}~--- a dictionary-
+like object containing lazy proxies. \emph{No data is fetched until a
+variable is sliced.}
+
+\subsection{Inspecting metadata}
+
+\begin{lstlisting}[language=Python]
+list(ds.keys())                  # top-level variable / group names
+ds.tree()                        # full hierarchical view (DAP4)
+ds['SST'].shape                  # shape, no data fetch
+ds['SST'].dtype                  # numpy dtype
+ds['SST'].attributes             # dict of attributes (DAS / DMR-attrs)
+ds['SST'].units                  # lazy attribute access
+ds.attributes                    # dataset-level (global) attributes
+\end{lstlisting}
+
+For DAP4 datasets with groups, FQNs apply:
+\texttt{ds['/gt3r/heights/lat\_ph']}.
+
+\subsection{Retrieving data}
+
+Slicing a variable triggers a constrained request to the server:
+\begin{lstlisting}[language=Python]
+sst = ds['SST'][0, 50:60, 100:110]   # 1 time step, 10x10 lat-lon window
+data = sst.data                       # numpy array
+\end{lstlisting}
+Under the hood, \texttt{pydap} builds the appropriate CE
+(DAP2 hyperslab or DAP4 \texttt{dap4.ce}), URL-escapes it, performs
+the GET, parses the binary response, and yields a numpy array.
+
+\subsection{Subsetting through pydap}
+
+Two equivalent levers:
+\begin{itemize}
+  \item \textbf{Python slicing.} As above. The user thinks in
+    Python; \texttt{pydap} writes the CE. Easy and safe for most
+    cases.
+  \item \textbf{Explicit CE.} Pass \texttt{output\_grid=False} or
+    build the constrained URL by hand and pass it to
+    \texttt{open\_url}. Useful when you already know the FQNs and
+    indices you want, or when \texttt{xarray}-style aggregation
+    needs precise control.
+\end{itemize}
+
+For collections of files, \texttt{pydap} provides
+\texttt{consolidate\_metadata(urls, concat\_dim=...)} which caches the
+shared dimension arrays in SQLite for the session, reportedly
+yielding 10--100$\times$ speedups when iterating over many files.
+
+\subsection{pydap as an xarray backend}
+
+\texttt{xarray.open\_dataset(url, engine="pydap")} (note the URL
+scheme stays HTTP; do not use \texttt{dap4://}) makes the remote
+dataset look like a local \texttt{xarray.Dataset}. \emph{Caveat from
+the pydap docs:} \texttt{xarray}'s
+\texttt{open\_mfdataset} does not, by default, push slices through to
+the server for each file; it requests the chunk and slices locally.
+To force per-file server-side subsetting, chunk the dataset so the
+chunk size matches the desired output extent, or aggregate URLs
+yourself. Overzealous chunking pushes the dask graph to thousands of
+tiny chunks and can be 10$\times$ \emph{slower} than fetching more
+data with fewer chunks.
+
+\subsection{Authentication}
+
+NASA Earthdata and many other archives require authentication. The
+common patterns are:
+\begin{itemize}
+  \item A \texttt{.netrc} file with credentials for
+    \texttt{urs.earthdata.nasa.gov}, picked up automatically.
+  \item An \texttt{earthaccess}-managed session passed in via
+    \texttt{session=}.
+  \item A \texttt{requests.Session} carrying cookies or a bearer
+    token.
+\end{itemize}
+For open archives (test.opendap.org, many academic THREDDS servers)
+no authentication is needed.
+
+\section{Implications for grep-dap}
+
+A few things the protocol survey makes clear for the project:
+\begin{enumerate}
+  \item \textbf{Prefer DAP4 when available.} A single \texttt{.dmr}
+    fetch yields both structure and attributes; FQNs eliminate
+    name-collision ambiguity; chunked transfer and checksums make
+    long fetches more robust. Fall back to DAP2 only when the server
+    refuses DAP4.
+  \item \textbf{Treat the DMR/DDS+DAS as the cheap probe.} Before
+    pulling any bytes, \texttt{grep-dap} should fetch the metadata
+    document and reason about variable names, shapes, dtypes,
+    dimensions, groups, and whatever attributes are present. Most
+    discriminating signal is here.
+  \item \textbf{Use small samples deliberately.} For each candidate
+    variable, a tiny hyperslab (say \texttt{[0:1:N]} along each axis
+    with \texttt{N} small) is cheap; statistical fingerprints
+    computed from such samples are how the contrastive-learning
+    approach hooked into OPeNDAP in the first place.
+  \item \textbf{Variable subsetting before data retrieval.} On
+    multi-variable datasets (think L2 swaths with hundreds of
+    variables), fetching the constrained DMR with only the
+    variables of interest is dramatically cheaper than fetching the
+    full DMR.
+  \item \textbf{Cache the metadata aggressively.} Hitting the same
+    server with the same DMR request repeatedly is wasteful and
+    impolite; \texttt{pydap}'s session cache or
+    \texttt{consolidate\_metadata} should be on by default.
+  \item \textbf{Catalogs and directory structure are part of the
+    signal.} Server catalog pages (Hyrax's \texttt{contents.html},
+    THREDDS catalog XML) name datasets and group them; filenames
+    and paths often encode platform, sensor, level, and date in
+    informative ways that the loose semantic metadata may omit.
+\end{enumerate}
+
+\section{Open questions and caveats}
+
+\begin{itemize}
+  \item \texttt{pydap}'s documentation notes that several advanced
+    sections (server-side functions, proxy configuration, some
+    response modules) are explicitly flagged as ``may be outdated.''
+    Anything in those sections should be re-verified before
+    relying on it.
+  \item \texttt{pydap} does not currently expose a generic
+    ``list functions this server supports'' call; server-side
+    functions are server-specific knowledge.
+  \item \texttt{pydap} does not (yet) aggregate URLs the way
+    \texttt{xarray} does; aggregation across files is handled by
+    \texttt{xarray} with \texttt{pydap} as the per-URL backend.
+  \item Some servers serve DAP4 but their DMRs decline to expose
+    certain attributes that DAP2 would have provided (or vice
+    versa). When metadata seems implausibly thin, try the other
+    protocol on the same URL.
+\end{itemize}
+
+\section{References}
+
+\begin{itemize}
+  \item OPeNDAP, Inc.: \url{https://www.opendap.org/}
+  \item DAP4 specification (Unidata/OPeNDAP, 2016):
+    \url{https://opendap.github.io/dap4-specification/DAP4.html}
+  \item DAP2 description, Cornillon et al.\ 1993:
+    \url{https://zenodo.org/records/10610992}
+  \item DAP2 protocol, Gallagher \& Flierl 1996:
+    \url{https://zenodo.org/records/10654616}
+  \item \texttt{pydap} documentation:
+    \url{https://pydap.github.io/pydap/en/intro.html}
+  \item \texttt{pydap} source / docs:
+    \url{https://github.com/pydap/pydap}
+  \item Hyrax data server:
+    \url{https://www.opendap.org/software/hyrax-data-server/}
+  \item THREDDS Data Server:
+    \url{https://www.unidata.ucar.edu/software/tds/}
+  \item NASA Earthdata OPeNDAP portal:
+    \url{https://www.earthdata.nasa.gov/engage/open-data-services-software/earthdata-developer-portal/opendap}
+  \item Test server (Hyrax, public):
+    \url{http://test.opendap.org/opendap/}
+\end{itemize}
+
+\end{document}

@@ -1,0 +1,194 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{enumitem}
+
+\emergencystretch=4em
+\tolerance=9999
+\hbadness=10000
+\sloppy
+
+\title{Metadata Notes for \texttt{SST\_Orbits/}\\
+       \large URI OPeNDAP server, \texttt{sst-aqua.gso.uri.edu}}
+\author{An outside reader (grep-dap test case)}
+\date{2026-05-17}
+
+\begin{document}
+\maketitle
+
+\paragraph{Context.}
+This note summarizes the gaps an external client (the
+\texttt{grep-dap} pipeline) found while reading the
+DAP4 metadata documents of the public orbit files in
+\url{https://sst-aqua.gso.uri.edu/opendap/SST_Orbits/}.
+The audit was performed against a representative file\linebreak
+(\texttt{AQUA\_MODIS\_orbit\_115220\_\allowbreak 20240101T011558\_\allowbreak L2\_SST-URI\_\allowbreak 24-2.nc4},
+\texttt{date\_created} 2025-05-17). The file is \emph{mostly}
+CF-1.5-compliant; the items below would close the remaining
+gaps. Full details are in \texttt{docs/uri\_test\_case\_2.tex}.
+
+\section*{Essential fixes (COARDS / CF correctness)}
+
+\begin{enumerate}[leftmargin=*,topsep=2pt]
+  \item \textbf{Non-UDUNITS unit strings.} Fifteen variables declare
+    \texttt{units="C"} or \texttt{units="C/km"}. In UDUNITS,
+    \texttt{C} is the symbol for \emph{coulomb}; strict CF
+    validators reject these. Substitute
+    \texttt{degree\_Celsius} and \texttt{degree\_Celsius km-1}
+    throughout. Affected variables: \texttt{SST\_In},
+    \texttt{regridded\_sst}, \texttt{eastward\_gradient},
+    \texttt{northward\_gradient}; in
+    \texttt{/Regrid\_to\_L2eqa/}: \texttt{L2eqa\_MODIS\_SST},
+    \texttt{L2eqa\_MODIS\_std\_SST},
+    \texttt{L2eqa\_AMSR\_E\_SST}, \texttt{AMSR\_E\_SST},
+    \texttt{MODIS\_SST\_on\_AMSR\_E\_grid},
+    \texttt{convolved\_MODIS\_on\_AMSR\_E\_grid}.
+
+  \item \textbf{Time variables missing a reference epoch.}
+    \texttt{DateTime}, and the per-granule \texttt{start\_time} and
+    \texttt{end\_time} in \texttt{/contributing\_granules/}, declare
+    \texttt{units="seconds"} with the epoch only in
+    \texttt{long\_name}. CF readers cannot recover the epoch.
+    Suggested: \texttt{units="seconds since 1970-01-01 00:00:00
+    UTC"} and add \texttt{calendar="gregorian"}.
+
+  \item \textbf{Two clearly wrong unit strings in
+    \texttt{/Regrid\_to\_L2eqa/}.}
+    \begin{itemize}[topsep=0pt]
+      \item \texttt{L2eqa\_AMSR\_E\_wind\_speed}: declared
+        \texttt{units="mm"}. The packing
+        (\texttt{scale\_factor=0.2}, \texttt{add\_offset=25.4})
+        yields the expected 0--50.8 range for wind speed in
+        m\,s$^{-1}$, and the sibling \texttt{AMSR\_E\_wind\_speed}
+        is correctly labelled \texttt{"m s-1"}. Change to
+        \texttt{"m s-1"}.
+      \item \texttt{L2eqa\_MODIS\_num\_SST}: declared
+        \texttt{units="C"}. \texttt{long\_name} says
+        ``num elements of non-nan elements in cell''; this is a
+        pixel count. Change to \texttt{"1"} and consider adding
+        \texttt{cell\_methods="area: count"}.
+    \end{itemize}
+
+  \item \textbf{Dimensionless quantities missing \texttt{units}.}
+    \texttt{region\_start}, \texttt{region\_end} (root) and
+    \texttt{granule\_start\_index}, \texttt{granule\_end\_index},
+    \texttt{orbit\_start\_index}, \texttt{orbit\_end\_index} (in
+    \texttt{/contributing\_granules/}) carry no \texttt{units}
+    attribute. CF requires \texttt{units="1"} for dimensionless
+    indices.
+
+  \item \textbf{Malformed flag attributes.} \texttt{refined\_mask}
+    and \texttt{qual\_sst} declare \texttt{flag\_masks=0}, which
+    is a scalar zero where CF expects a bitmask. The
+    \texttt{flag\_meanings} indicate enumerated categories. Replace
+    with \texttt{flag\_values}:
+    \begin{itemize}[topsep=0pt]
+      \item \texttt{refined\_mask}: \texttt{flag\_values="0 1"},
+        \texttt{flag\_meanings="good bad"}.
+      \item \texttt{qual\_sst}: \texttt{flag\_values="0 1 2 3 4"},
+        \texttt{flag\_meanings="best good questionable bad
+        notprocessed"}. Also: the variable's
+        \texttt{standard\_name="sea\_surface\_temperature"} is
+        incorrect for a flag; suggested
+        \texttt{standard\_name="sea\_surface\_temperature status\_flag"}.
+    \end{itemize}
+
+  \item \textbf{Missing \texttt{\_FillValue} on a few variables.}
+    \texttt{region\_start}, \texttt{region\_end}, and the time
+    pair \texttt{start\_time} / \texttt{end\_time} in
+    \texttt{/contributing\_granules/} lack
+    \texttt{\_FillValue}. Suggested:
+    \texttt{-2147483647} (Int32) and \texttt{NaN} (Float64)
+    respectively.
+\end{enumerate}
+
+\section*{Recommended additions (high payoff for users)}
+
+\begin{enumerate}[leftmargin=*,topsep=2pt,start=7]
+  \item \textbf{\texttt{coordinates} attribute on every 2-D data
+    variable.} CF-1.x convention: data variables with auxiliary
+    (non-1D-coordinate) lat/lon should declare
+    \begin{quote}\ttfamily
+      coordinates = "latitude longitude DateTime"
+    \end{quote}
+    Without this, CF-aware tools (xarray, netCDF-Java, NCO) will
+    not auto-locate the auxiliary coordinates.
+
+  \item \textbf{\texttt{ancillary\_variables} linking SST and
+    gradient fields to their quality flags.} For
+    \texttt{SST\_In}, \texttt{regridded\_sst},
+    \texttt{eastward\_gradient}, \texttt{northward\_gradient}:
+    \begin{quote}\ttfamily
+      ancillary\_variables = "qual\_sst refined\_mask"
+    \end{quote}
+
+  \item \textbf{\texttt{cell\_methods} on derived quantities.} For
+    the gradient fields, e.g.\
+    \begin{quote}\ttfamily
+      cell\_methods = "ny: derivative nx: derivative"
+    \end{quote}
+    For the L2eqa sub-cell statistics group, \texttt{"area: mean"},
+    \texttt{"area: standard\_deviation"}, \texttt{"area: count"}
+    as appropriate.
+
+  \item \textbf{Global discovery attributes.} The file is in good
+    shape on ACDD (it carries \texttt{title}, \texttt{Conventions},
+    \texttt{Summary}, \texttt{creator\_*}, \texttt{publisher\_*},
+    \texttt{license}, \texttt{cdm\_data\_type}). Two additions
+    would help machine catalogs:
+    \begin{itemize}[topsep=0pt]
+      \item \texttt{platform="Aqua"}, \texttt{instrument="MODIS"},
+        \texttt{processing\_level="L2"},
+        \texttt{product\_version="URI 24-2"}.
+      \item \texttt{geospatial\_lat\_min/max},
+        \texttt{geospatial\_lon\_min/max},
+        \texttt{time\_coverage\_start/end} (per orbit, derived from
+        \texttt{nadir\_latitude}/\texttt{longitude} and
+        \texttt{DateTime}).
+    \end{itemize}
+
+  \item \textbf{AMSR-E retirement caveat.} The
+    \texttt{/Regrid\_to\_L2eqa/AMSR\_E\_*} and
+    \texttt{L2eqa\_AMSR\_E\_*} variables are $1\times 1$
+    placeholders in any file dated after October 2011 (AMSR-E
+    instrument retirement). A one-line \texttt{comment}
+    \begin{quote}\ttfamily
+      comment = "AMSR-E retired 2011-10; field is 1x1 placeholder
+      in files after that date."
+    \end{quote}
+    on each AMSR-E variable would save downstream readers a
+    surprised debugging session.
+
+  \item \textbf{Aliasing.} The existing \texttt{Summary} attribute
+    fills the CF role of \texttt{comment}; consider duplicating it
+    under the canonical \texttt{comment} key, so CF-aware tools
+    that look only for \texttt{comment} pick it up.
+\end{enumerate}
+
+\section*{Items that are already good and need no change}
+
+The orbit's \texttt{latitude}/\texttt{longitude} declare units and
+\texttt{scale\_factor=0.001} cleanly. \texttt{Conventions="CF-1.5"},
+\texttt{title}, \texttt{institution}, \texttt{creator\_*},
+\texttt{publisher\_*}, \texttt{license},
+\texttt{Metadata\_Conventions}, and the contributing-granules
+provenance group are all present and useful as-is. Of the 44
+atomic variables, 21 are COARDS-complete by the strict reading
+used in this audit; with the substitutions in items 1--6 above,
+that count rises to 36.
+
+\paragraph{Closing.}
+None of these is large work --- most are one-line changes in the
+producing code. The benefit accrues to anyone hitting the OPeNDAP
+endpoint through a strict CF / ACDD reader (which is most modern
+data-discovery tooling).
+
+\paragraph{Source.}
+Full audit and per-variable proposals: \\
+\texttt{docs/uri\_test\_case\_2.tex}. \\
+Sample-driven supporting analysis (lat/lon scaling, AMSR-E
+emptiness check): \texttt{docs/uri\_test\_case\_1.tex},
+\texttt{docs/uri\_test\_case\_4.tex}.
+
+\end{document}

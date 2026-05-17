@@ -1,0 +1,138 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{amsmath}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  columns=fullflexible,
+  frame=single,
+  backgroundcolor=\color{gray!10},
+  showstringspaces=false
+}
+
+\title{URI OPeNDAP Test Case: Working Log (Prompt \#6)}
+\author{Compiled for P. Cornillon}
+\date{2026-05-17}
+
+\begin{document}
+\maketitle
+
+\section*{Purpose}
+
+Working log for Prompt~\#6: produce two short curator-facing
+LaTeX documents (one per dataset) summarizing what is missing in
+the semantic metadata.
+
+\section{Prompt \#6 (2026-05-17 11:37 UTC)}
+
+\subsection{Instruction}
+
+\emph{``Produce LaTeX documents, one for each dataset, directed to
+the curators of the two datasets, describing what is missing
+related to the semantic metadata. These documents should be short
+and to the point.''}
+
+\subsection{Deliverables}
+
+Three files:
+
+\begin{itemize}
+  \item \texttt{docs/curator\_report\_sst\_orbits.tex} --- letter
+    to the curator(s) of the \texttt{SST\_Orbits/} branch.
+  \item \texttt{docs/curator\_report\_gradients\_by\_period.tex}
+    --- letter to the curator(s) of the
+    \texttt{gradients\_by\_period/} branch.
+  \item \texttt{docs/test\_case\_uri\_log\_6.tex} --- this log.
+\end{itemize}
+
+\subsection{Drafting choices}
+
+\paragraph{Length and tone.} Both letters are deliberately short
+(one to two printed pages each, no abstract, no table of
+contents). The audience is the producing scientist, not an outside
+reviewer; the goal is a punch-list of items that would close the
+metadata gaps, not a critique of the existing work. References to
+the deeper underlying audits are given at the end of each letter
+so the curator can drill down if needed.
+
+\paragraph{Structure (both letters).}
+\begin{enumerate}
+  \item One-paragraph context (who I am, what I read).
+  \item ``Essential fixes'': COARDS- / CF-correctness issues.
+  \item ``Recommended additions'': CF / ACDD attributes that are
+    not strictly required but have high payoff (links to
+    coordinates, ancillary variables, cell methods, discovery
+    metadata).
+  \item ``What is already good'' (SST letter) or ``what is not
+    safely guessable'' (gradients letter).
+\end{enumerate}
+The two endings differ because the two situations differ. The
+SST-orbits letter closes with a note that the file is largely fine
+as-is; the gradients letter closes with a list of items that an
+external reader simply cannot supply (date\_created, history,
+exact upstream operator form, etc.) and that the curator must
+provide from the producing code.
+
+\paragraph{Both letters consciously avoid:}
+\begin{itemize}
+  \item Re-deriving the audit (the reader can find that in the
+    earlier outputs).
+  \item Verbose per-variable tables (the full tables are in
+    \texttt{uri\_test\_case\_2.tex} and
+    \texttt{uri\_test\_case\_3.tex}).
+  \item Stylistic recommendations not directly tied to CF / COARDS /
+    ACDD.
+\end{itemize}
+
+\subsection{Headline content carried over from prior prompts}
+
+For the \texttt{SST\_Orbits/} letter:
+\begin{itemize}
+  \item 15 of 23 incomplete variables are fixed by substituting
+    \texttt{units="C"} $\to$ \texttt{degree\_Celsius} and
+    \texttt{"C/km"} $\to$ \texttt{degree\_Celsius km-1}.
+  \item Three time variables lack the
+    \texttt{<unit> since <reference>} form.
+  \item Two units in the \texttt{/Regrid\_to\_L2eqa/} group are
+    factually wrong
+    (\texttt{L2eqa\_AMSR\_E\_wind\_speed=mm};
+    \texttt{L2eqa\_MODIS\_num\_SST=C}).
+  \item \texttt{flag\_masks=0} on \texttt{refined\_mask} and
+    \texttt{qual\_sst} is malformed and should be replaced with
+    \texttt{flag\_values} / \texttt{flag\_meanings}.
+  \item AMSR-E retirement (Oct 2011) should be noted in a
+    \texttt{comment} on the relevant variables.
+\end{itemize}
+
+For the \texttt{gradients\_by\_period/} letter:
+\begin{itemize}
+  \item Files declare \emph{nothing}. The letter opens with that
+    fact.
+  \item Seven items are confidently inferable (grid orientation,
+    units, fill, time, day/night split, divisor pairings,
+    underlying gradient operator support $\sim$5 km).
+  \item Six essential additions and four recommended additions
+    follow, organized so the curator can stop at the level of
+    effort they have time for.
+  \item A final ``not safely guessable'' list draws the line at
+    which the curator's input is required.
+\end{itemize}
+
+\subsection{Commands}
+
+\begin{lstlisting}
+pdflatex curator_report_sst_orbits.tex
+pdflatex curator_report_gradients_by_period.tex
+pdflatex test_case_uri_log_6.tex
+\end{lstlisting}
+
+\subsection{Session timing}
+
+Started 2026-05-17 11:37\,UTC. Closed log 2026-05-17
+$\sim$12:05\,UTC.
+
+\end{document}

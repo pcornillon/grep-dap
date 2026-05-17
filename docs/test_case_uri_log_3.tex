@@ -1,0 +1,218 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{amsmath}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  columns=fullflexible,
+  frame=single,
+  backgroundcolor=\color{gray!10},
+  showstringspaces=false
+}
+
+\title{URI OPeNDAP Test Case: Working Log (Prompt \#3)}
+\author{Compiled for P. Cornillon}
+\date{2026-05-16}
+
+\begin{document}
+\maketitle
+
+\section*{Purpose}
+
+Working log for Prompt~\#3 of the URI OPeNDAP test case (the
+\texttt{gradients\_by\_period/} analog of Prompt~\#2's
+\texttt{SST\_Orbits/} audit). Findings are in
+\texttt{docs/uri\_test\_case\_3.tex}.
+
+\section{Prompt \#3 (2026-05-16 20:26 UTC)}
+
+\subsection{Instruction}
+
+\emph{``Repeat the above for Readable Branch \#2:
+gradients\_by\_period/. Since this archive has no semantic metadata,
+you will have to infer whatever you can. Group the semantic
+metadata by inferred values for which you are very confident, those
+for which you are not sure but have guessed at entries, and those
+for which you do not feel comfortable guessing. Also group by
+essential and `would be nice'.''}
+
+\subsection{Starting point from Prompts~\#1--2}
+
+\begin{itemize}
+  \item 270 files, one per calendar month from \texttt{01\_2003}
+    to \texttt{12\_2024}; filename pattern
+    \texttt{augmented\_monthly\_stats\_MM\_YYYY.nc}.
+  \item DMR: 2 dimensions (\texttt{lon=360}, \texttt{lat=180}),
+    34 \texttt{Float64} variables of shape (lon, lat); zero
+    global attributes; zero variable attributes.
+  \item Variable naming grammar is regular:
+    \texttt{day\_/night\_} prefix; one of six quantity families
+    (SST, eastward/northward gradient, magnitude gradient, and
+    swath-relative grad\_as/grad\_at/grad\_mag\_per\_km); for sums,
+    a paired \texttt{\_squared}; three pixel-count flavors
+    (\texttt{pixel\_count}, \texttt{as\_pixel\_count},
+    \texttt{at\_pixel\_count}).
+  \item The companion branch \texttt{SST\_Orbits/} carries
+    \texttt{SST\_In} in $^\circ$C and
+    \texttt{eastward\_gradient/northward\_gradient} in $^\circ$C/km;
+    that is the source for the unit assignments here.
+\end{itemize}
+
+\subsection{New investigations}
+
+Three additional probes were run for Prompt~\#3.
+
+\paragraph{Schema constancy across the period.}
+\texttt{scripts/gradients\_dmr\_inventory.py} fetches the DMR for
+\texttt{01\_2003}, \texttt{07\_2020}, and \texttt{12\_2024} and
+confirms the schema is identical: 2 dimensions
+(\texttt{lon=360}, \texttt{lat=180}), 34 Float64 variables of
+shape (lon, lat), no attributes anywhere. Conclusion: assumptions
+made from a single sample file generalize across all 270 files.
+
+\paragraph{Lat / lon convention by geography.}
+\texttt{scripts/gradients\_geom\_resolve.py} tests the four
+combinations of \{lat axis runs S--N or N--S\} $\times$
+\{lon axis is $-180\to+180$ or $0\to360$\} by looking up six
+known-land points (Sahara, Australia interior, Amazon basin,
+Central US, Greenland, Tibet) and six known-ocean points (Pacific
+center, Atlantic center, Indian Ocean, North Pacific, Persian Gulf,
+Western Pacific Warm Pool) and asking whether \texttt{day\_pixel\_count}
+is zero where it should be (land) and non-zero where it should be
+(ocean). The result is unambiguous: only the combination
+\textbf{lat\_idx 0 = $-89.5^\circ$} (S--N), \textbf{lon\_idx 0 =
+$-179.5^\circ$} (cell-centered $-180\to+180$) classifies all 12
+points correctly. All other conventions miss multiple points
+(e.g.\ N--S lat would put Australia at an ocean-only index).
+
+The implied cell-center coordinate vectors are
+\begin{lstlisting}
+lat[k] = -89.5 + k       (k = 0 .. 179)
+lon[k] = -179.5 + k      (k = 0 .. 359)
+\end{lstlisting}
+
+\paragraph{Sign and divisor conventions on gradient variables.}
+\texttt{scripts/gradients\_signs\_test.py} pulls the day-side
+gradient sums and squared sums for \texttt{07\_2020} and reports:
+\begin{itemize}
+  \item \texttt{eastward\_gradient}, \texttt{northward\_gradient},
+    \texttt{grad\_as\_per\_km}, \texttt{grad\_at\_per\_km} are
+    all signed (both positive and negative sums observed).
+  \item \texttt{magnitude\_gradient} and \texttt{grad\_mag\_per\_km}
+    are strictly non-negative (min $= 0$).
+  \item The squared sums are all non-negative, as required.
+  \item \texttt{sum\_magnitude\_gradient} per cell is much larger
+    than $\sqrt{S_e^2 + S_n^2}$ where $S_e =
+    \mathtt{sum\_eastward\_gradient}$ and $S_n =
+    \mathtt{sum\_northward\_gradient}$ in the same cell; the ratio
+    mean is $\approx 12$. That tells us
+    \texttt{sum\_magnitude\_gradient} is the sum of per-pixel
+    magnitudes $\sum |\nabla T|$ rather than the magnitude of the
+    vector sum (which would yield ratio $= 1$). Standard
+    bookkeeping.
+  \item Pixel-count comparisons: \texttt{day\_pixel\_count} has
+    mean 10\,030 per cell, \texttt{day\_as\_pixel\_count} has
+    mean 8\,110 ($\approx 0.81\,N_{\rm pix}$), and
+    \texttt{day\_at\_pixel\_count} has mean 4\,090
+    ($\approx 0.41\,N_{\rm pix}$). The three counts differ:
+    along-scan gradient validity is $\sim$2$\times$ the along-track
+    gradient validity. The latter ratio is consistent with MODIS
+    Aqua's 10-line scan structure, where every tenth along-track
+    derivative crosses a scan boundary and is masked.
+  \item Per-cell mean check: $\mathtt{sum\_magnitude\_gradient}
+    / \mathtt{pixel\_count}$ gives $\sim 0.046\,^\circ$C/km
+    averaged globally; $\mathtt{sum\_grad\_mag\_per\_km}
+    / \mathtt{at\_pixel\_count}$ gives $\sim 0.044\,^\circ$C/km;
+    $\mathtt{sum\_grad\_mag\_per\_km} / \mathtt{as\_pixel\_count}$
+    gives $\sim 0.022\,^\circ$C/km. The first two match closely,
+    indicating that \texttt{sum\_grad\_mag\_per\_km} should be
+    divided by \texttt{at\_pixel\_count} (the more restrictive
+    count), not \texttt{as\_pixel\_count}.
+\end{itemize}
+
+Combined, this fixes the per-variable divisor map:
+\begin{itemize}
+  \item \texttt{*\_sum\_SST}, \texttt{*\_sum\_SST\_squared} :
+    divide by \texttt{*\_pixel\_count}.
+  \item \texttt{*\_sum\_eastward\_gradient}, etc.,
+    \texttt{*\_sum\_magnitude\_gradient}, etc. : divide by
+    \texttt{*\_pixel\_count}.
+  \item \texttt{*\_sum\_grad\_as\_per\_km}, etc.: divide by
+    \texttt{*\_as\_pixel\_count}.
+  \item \texttt{*\_sum\_grad\_at\_per\_km}, etc.: divide by
+    \texttt{*\_at\_pixel\_count}.
+  \item \texttt{*\_sum\_grad\_mag\_per\_km}, etc.: divide by
+    \texttt{*\_at\_pixel\_count} (inferred from value match).
+\end{itemize}
+
+\subsection{What I am NOT able to pin down}
+
+\begin{itemize}
+  \item The exact \emph{algorithm} used in the upstream orbit
+    files to compute gradients (forward difference, centered
+    difference, Sobel-style operator, distance-weighted between
+    neighboring pixels, etc.). The orbit-file standard\_names
+    just say ``\texttt{eastward\_temperature\_gradient}'' and
+    ``\texttt{northward\_temperature\_gradient}'' without
+    specifying.
+  \item Whether \texttt{magnitude\_gradient} and
+    \texttt{grad\_mag\_per\_km} are computed pixel-by-pixel from
+    the geographic and swath-relative components respectively,
+    or whether one is just stored twice with different counts.
+    At a pixel, $|\nabla T|$ is invariant under rotation, so the
+    two should be numerically equal pixel-by-pixel; the file
+    distinguishes them, so presumably they differ in
+    \emph{which pixels qualify as valid}. That is consistent with
+    the count comparison above.
+  \item Whether `\texttt{as}'/`\texttt{at}' really stand for
+    along-scan / along-track. The values are signed and have
+    almost identical standard deviations to
+    \texttt{eastward}/\texttt{northward}, so at low latitude they
+    are nearly identical to the geographic components. The
+    name strongly implies along-scan / along-track but I have
+    not proved it.
+  \item Provenance attributes (\texttt{date\_created},
+    \texttt{history}, \texttt{processing\_software}, exact UUID
+    of the generating run, etc.) cannot be inferred from the
+    file or the directory listing.
+\end{itemize}
+
+\subsection{Plan for the findings document}
+
+The findings document organizes inferred values along two axes
+as the user requested:
+\begin{itemize}
+  \item \textbf{Importance.} \emph{Essential} = required by COARDS
+    or by any reasonable reading of the data (units, fill,
+    coordinate variables, basic globals). \emph{Nice-to-have} =
+    CF/ACDD attributes that aid interpretation but are not
+    required.
+  \item \textbf{Confidence.} \emph{Very confident} = directly
+    derivable from data, naming convention, or the companion
+    branch's metadata. \emph{Guessed} = plausible best guess that
+    a reader could not verify without contacting the producer.
+    \emph{Will not guess} = the gap exists but I do not have
+    enough evidence to propose a value.
+\end{itemize}
+
+The cross of those gives a $3 \times 2$ table around which the
+audit is structured.
+
+\subsection{Commands}
+
+\begin{lstlisting}
+python3 scripts/gradients_dmr_inventory.py
+python3 scripts/gradients_geom_resolve.py
+python3 scripts/gradients_signs_test.py
+\end{lstlisting}
+
+\subsection{Session timing}
+
+Started 2026-05-16 20:26\,UTC. Closed log 2026-05-16
+$\sim$20:55\,UTC.
+
+\end{document}

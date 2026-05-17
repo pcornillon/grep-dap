@@ -1,0 +1,8 @@
+\contentsline {section}{\numberline {1}What ``spatial range over which the gradients were calculated'' means}{1}{section.1}%
+\contentsline {section}{\numberline {2}Three lines of evidence}{2}{section.2}%
+\contentsline {subsection}{\numberline {2.1}Line 1: pixel-count ratios}{2}{subsection.2.1}%
+\contentsline {subsection}{\numberline {2.2}Line 2: magnitude-matching to centered differences}{2}{subsection.2.2}%
+\contentsline {subsection}{\numberline {2.3}Line 3: autocorrelation of the stored gradient}{3}{subsection.2.3}%
+\contentsline {section}{\numberline {3}Convergent estimate}{3}{section.3}%
+\contentsline {section}{\numberline {4}Things the analysis cannot distinguish}{4}{section.4}%
+\contentsline {section}{\numberline {5}Implication for downstream metadata}{4}{section.5}%

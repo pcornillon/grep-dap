@@ -1,0 +1,21 @@
+\contentsline {section}{\numberline {1}Background}{1}{section.1}%
+\contentsline {section}{\numberline {2}What the data themselves disclose}{2}{section.2}%
+\contentsline {paragraph}{Grid orientation.}{2}{section*.2}%
+\contentsline {paragraph}{Cell-centered $1^\circ $ grid.}{2}{section*.3}%
+\contentsline {paragraph}{Signs.}{2}{section*.4}%
+\contentsline {paragraph}{Sum semantics.}{2}{section*.5}%
+\contentsline {paragraph}{Pixel counts.}{2}{section*.6}%
+\contentsline {paragraph}{Divisor for the gradient magnitude.}{2}{section*.7}%
+\contentsline {paragraph}{Time.}{3}{section*.8}%
+\contentsline {paragraph}{Fill value.}{3}{section*.9}%
+\contentsline {section}{\numberline {3}Confidence $\times $ Importance: bucket summary}{3}{section.3}%
+\contentsline {subsection}{\numberline {3.1}\textsc {essential}{} -- \textbf {very confident}{}}{3}{subsection.3.1}%
+\contentsline {subsection}{\numberline {3.2}\textsc {essential}{} -- \textbf {guessed}{}}{4}{subsection.3.2}%
+\contentsline {subsection}{\numberline {3.3}\textsc {essential}{} -- \textbf {will not guess}{}}{5}{subsection.3.3}%
+\contentsline {subsection}{\numberline {3.4}\textsc {nice-to-have}{} -- \textbf {very confident}{}}{5}{subsection.3.4}%
+\contentsline {subsection}{\numberline {3.5}\textsc {nice-to-have}{} -- \textbf {guessed}{}}{6}{subsection.3.5}%
+\contentsline {subsection}{\numberline {3.6}\textsc {nice-to-have}{} -- \textbf {will not guess}{}}{6}{subsection.3.6}%
+\contentsline {section}{\numberline {4}Per-variable proposed long\_name and units}{7}{section.4}%
+\contentsline {section}{\numberline {5}Cross-tabular summary}{9}{section.5}%
+\contentsline {section}{\numberline {6}Summary}{9}{section.6}%
+\contentsline {section}{\numberline {7}Caveats}{9}{section.7}%

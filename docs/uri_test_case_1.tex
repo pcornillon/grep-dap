@@ -1,0 +1,566 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{amsmath}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  columns=fullflexible,
+  frame=single,
+  backgroundcolor=\color{gray!10},
+  showstringspaces=false
+}
+
+\title{Exploratory Analysis of the URI OPeNDAP Server\\
+       \large \texttt{https://sst-aqua.gso.uri.edu/opendap/}\\
+       \large grep-dap test case, Prompt \#1}
+\author{Compiled for P. Cornillon}
+\date{2026-05-16}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+This document records what an outside client can learn about the URI
+OPeNDAP server at
+\url{https://sst-aqua.gso.uri.edu/opendap/} given only its
+catalog pages, the DAP4 metadata documents (DMRs) of the publicly
+readable datasets, and small subsampled slices of the actual data.
+The server is a Hyrax instance hosting 17 top-level containers, of
+which only \texttt{SST\_Orbits/} and \texttt{gradients\_by\_period/}
+are publicly readable; the rest return Hyrax 403 (BES filesystem
+permissions). The two readable branches sit at opposite ends of the
+semantic-metadata spectrum that motivates \texttt{grep-dap}: the
+orbit files are richly CF-annotated, and the gradient-statistics
+files carry essentially no semantic metadata at all. The report
+describes each branch, distinguishes what is stated by the metadata
+from what is inferred by structure or by reading the data, and notes
+specific places where a metadata-inference tool would have to do
+useful work.
+\end{abstract}
+
+\tableofcontents
+
+\section{Server identification}
+
+\begin{description}[leftmargin=2em,style=nextline,topsep=2pt]
+  \item[Software.] Hyrax (OPeNDAP, Inc.), behind \texttt{nginx}.
+    Confirmed by (i) the \texttt{Server: nginx} header on the
+    landing page, (ii) the rendered \texttt{contents.html}
+    template that includes the OPeNDAP logo, the
+    \texttt{contents.css} stylesheet, and the standard ``DAP4
+    Response Links'' / ``DAP2 Response Links'' columns, and
+    (iii) the Hyrax-format 403 error page on restricted
+    directories, which is BES-style and names the on-disk path
+    (\texttt{/usr/share/hyrax/MUR/} and similar).
+  \item[Protocol.] Both DAP2 and DAP4 are advertised on every
+    dataset; DAP4 is the natural choice for this project because
+    a single \texttt{.dmr.xml} fetch returns structure plus all
+    attributes. \texttt{pydap.client.open\_url(\dots,
+    protocol="dap4")} succeeds on both readable branches.
+  \item[Authentication.] No challenge was issued. The 403s are
+    BES filesystem permissions, not \texttt{401 Unauthorized}; a
+    typical Earthdata-style login is not in play. Whatever
+    credentials would unlock the other 15 directories live on the
+    server itself.
+  \item[Hostname signal.] The hostname \texttt{sst-aqua.gso.uri.edu}
+    nominates the URI Graduate School of Oceanography
+    (\texttt{gso.uri.edu}) and points at MODIS-Aqua SST as the
+    likely subject. Both expectations are confirmed by the
+    catalog contents (see \S\ref{sec:sstorbits}).
+\end{description}
+
+\section{Top-level catalog}\label{sec:catalog}
+
+The root carries 17 entries (one of which, \texttt{@eaDir/}, is a
+Synology NAS housekeeping directory and is ignored). Of the remaining
+16, two are publicly readable and 14 return Hyrax 403.
+
+\begin{center}
+\begin{tabular}{@{}lll@{}}
+\toprule
+Container & Access & Likely contents (from name alone) \\
+\midrule
+\texttt{SST\_Orbits/}             & \textbf{200} & MODIS-Aqua L2 SST orbit files (this study) \\
+\texttt{gradients\_by\_period/}   & \textbf{200} & Monthly SST + gradient statistics (this study) \\
+\midrule
+\texttt{JAXA\_Orbits/}            & 403 & JAXA satellite (likely AMSR2 / GCOM-W) orbit data \\
+\texttt{JAXA\_Orbits\_OLD/}       & 403 & Older JAXA orbit holdings \\
+\texttt{MUR/}                     & 403 & JPL MUR L4 SST analysis \\
+\texttt{RSS\_Orbits/}             & 403 & Remote Sensing Systems microwave SST orbits \\
+\texttt{RSS\_Orbits\_OLD/}        & 403 & Older RSS holdings \\
+\texttt{RSS\_Orbits\_REALLY\_OLD/}& 403 & Still-older RSS holdings \\
+\texttt{gradients\_by\_period\_5day/} & 403 & 5-day analogue of \texttt{gradients\_by\_period} \\
+\texttt{iQuamBuoy/}               & 403 & NOAA iQuam in-situ SST (drifter / buoy) \\
+\texttt{matchups/}                & 403 & Satellite$\leftrightarrow$in-situ matchup tables \\
+\texttt{matchups\_v2/}            & 403 & Successor matchup version \\
+\texttt{matchups\_v3/}            & 403 & Successor matchup version \\
+\texttt{timeSeries/}              & 403 & Per-location SST time series \\
+\texttt{timeSeries\_v2/}          & 403 & Successor time-series version \\
+\texttt{timeSeries\_v2\_backup/}  & 403 & Backup snapshot of v2 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The 14 names map cleanly onto four thematic axes that any inferring
+client should record even when it cannot read the contents:
+\begin{itemize}
+  \item \textbf{Sensor / agency} (JAXA, RSS, MUR, AQUA implicit in
+    the hostname).
+  \item \textbf{Geometry} (Orbits = L2 swath; gradients-by-period =
+    gridded statistics; timeSeries = per-location).
+  \item \textbf{Versioning} (\texttt{\_v2}, \texttt{\_v3},
+    \texttt{\_OLD}, \texttt{\_REALLY\_OLD}) --- a process history.
+  \item \textbf{In-situ vs.\ satellite vs.\ matchup}
+    (\texttt{iQuamBuoy} is in-situ, \texttt{matchups[\_v2,\_v3]}
+    are by construction satellite\,$\times$\,in-situ collocations).
+\end{itemize}
+
+That is meaningful catalog-level metadata extracted from
+\emph{nothing but folder names}, and it is the kind of inference
+\texttt{grep-dap} should preserve.
+
+\section{Readable branch \#1: \texttt{SST\_Orbits/}}\label{sec:sstorbits}
+
+\subsection{Directory structure and filenames}
+
+The branch is partitioned by calendar year (\texttt{2002}--\texttt{2024})
+and within each year by month (\texttt{01}--\texttt{12}). Leaf
+filenames carry a great deal of structured information:
+
+\begin{lstlisting}
+AQUA_MODIS_orbit_115220_20240101T011558_L2_SST-URI_24-2.nc4
+^^^^^^^^^^      ^^^^^^^ ^^^^^^^^^^^^^^^ ^^^^^^^^^^^ ^^^^
+sensor          orbit#  start (ISO)     product     version
+\end{lstlisting}
+
+So even before opening a single file we can write down:
+\begin{itemize}
+  \item Source platform: NASA Aqua, MODIS instrument.
+  \item Processing level: L2 (per-orbit, swath-projected, no global
+    composite).
+  \item Product family: SST.
+  \item Producer / processor: URI (the host's own institution).
+  \item Local version: \texttt{24-2}. Coupled with the
+    \texttt{\_OLD} naming pattern of sibling directories this is
+    consistent with URI maintaining its own reprocessing series.
+  \item Temporal coverage: 2002-07-04 (MODIS-Aqua first light is
+    early July 2002) onward. The earliest filename in the
+    catalog will pin this exactly; the present sample is in
+    January 2024.
+  \item Volume: $\sim$14.4 orbits per day $\times$ 365\,d $\times$
+    23 years $\approx 1.2\times 10^5$ orbit files.
+\end{itemize}
+
+\subsection{Structural metadata (DMR)}
+
+The DMR for the sample orbit
+\begin{lstlisting}
+https://sst-aqua.gso.uri.edu/opendap/SST_Orbits/2024/01/
+    AQUA_MODIS_orbit_115220_20240101T011558_L2_SST-URI_24-2.nc4
+\end{lstlisting}
+declares three root-level dimensions and two groups (DAP4-only):
+
+\begin{center}
+\begin{tabular}{@{}lll@{}}
+\toprule
+Dimension & Size & Interpretation \\
+\midrule
+\texttt{ny} & 40\,271 & along-track scan lines of the orbit \\
+\texttt{nx} & 1\,354  & across-track pixels (MODIS 1\,km swath width) \\
+\texttt{i}  & 5       & along-orbit subregion index (5 segments) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Root-level variables (selected; types and shapes drawn directly from
+the DMR; semantic content from the DMR attributes):
+
+\begin{center}
+\renewcommand{\arraystretch}{1.1}
+\begin{tabular}{@{}lp{0.20\linewidth}p{0.16\linewidth}p{0.42\linewidth}@{}}
+\toprule
+Type & Name & Shape (dims) & Notes from DMR attributes \\
+\midrule
+Int16 & \texttt{SST\_In}                              & (ny, nx) & \texttt{units=C}, scale 0.005, \texttt{standard\_name=sea\_surface\_temperature}, valid\_min/max $-600/9000$ raw. \\
+Int16 & \texttt{regridded\_sst}                       & (ny, nx) & \texttt{units=C}, scale 0.005, \texttt{standard\_name=masked\_sea\_surface\_temperature}. A smoothed / masked SST field. \\
+Int32 & \texttt{eastward\_gradient}                   & (ny, nx) & \texttt{units=C/km}, scale 0.0001, \texttt{standard\_name=eastward\_temperature\_gradient}. \\
+Int32 & \texttt{northward\_gradient}                  & (ny, nx) & \texttt{units=C/km}, scale 0.0001, \texttt{standard\_name=northward\_temperature\_gradient}. \\
+Int8  & \texttt{refined\_mask}                        & (ny, nx) & Mask removing original high-gradient pixels (long\_name). \\
+Int8  & \texttt{qual\_sst}                            & (ny, nx) & Per-pixel SST quality flag. \\
+Int32 & \texttt{latitude}, \texttt{longitude}         & (ny, nx) & Pixel coordinates. \texttt{units=degrees\_north/east} but no scale\_factor declared; raw values are $10^3 \times$ degrees (see \S\ref{sec:gaps}). \\
+Int32 & \texttt{regridded\_latitude}, \texttt{regridded\_longitude} & (ny, nx) & Same as above but on the regridded grid. \\
+Float32 & \texttt{nadir\_latitude/longitude}, \texttt{left/right\_swath\_edge\_trackline\_latitude/longitude} & (ny,) & Swath geometry, in degrees. \\
+Float32 & \texttt{time\_from\_start\_orbit}          & (ny,) & Seconds since orbit start. \\
+Float64 & \texttt{DateTime}                          & scalar  & Seconds since 1970-01-01 UTC; \texttt{standard\_name=time}. \\
+Int32   & \texttt{region\_start}, \texttt{region\_end} & (i=5,) & Index ranges of the five along-orbit subregions. \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\paragraph{Group \texttt{/Regrid\_to\_L2eqa/}.} The orbit file is not
+just an L2 SST file: it carries an additional group of fields
+\emph{regridded to an L2 equal-area grid}, together with collocated
+\textbf{AMSR-E} (passive microwave) wind speed, water vapor, cloud
+liquid water, and SST. Notable variables:
+\texttt{L2eqa\_MODIS\_SST}, \texttt{L2eqa\_MODIS\_std\_SST},
+\texttt{L2eqa\_MODIS\_num\_SST} (MODIS resampled with sub-cell
+statistics), \texttt{L2eqa\_AMSR\_E\_SST/wind\_speed/water\_vapor/
+cloud\_liquid\_water} (AMSR-E resampled), the native
+\texttt{AMSR\_E\_lat/lon/SST/\dots}, plus
+\texttt{MODIS\_SST\_on\_AMSR\_E\_grid} and
+\texttt{convolved\_MODIS\_on\_AMSR\_E\_grid}. This is the
+infrastructure of a MODIS$\leftrightarrow$AMSR-E intercomparison
+product.
+
+AMSR-E stopped producing data in October 2011, so the AMSR-E-named
+variables in 2024 orbit files almost certainly contain only fill
+values --- the schema persists past the instrument's lifetime. A
+2010-era file would be the place to check this.
+
+\paragraph{Group \texttt{/contributing\_granules/}.} Provenance:
+filenames, start/end times, and byte-range indices of the source
+NASA L2 granules that were stitched together to form the orbit. No
+science, but valuable for reproducibility tracking.
+
+\subsection{Sampled data}
+
+Two slice reads with \texttt{pydap} validate the metadata; see
+\texttt{scripts/uri\_sample\_data.py},
+\texttt{scripts/uri\_sample\_equator.py}.
+
+\paragraph{Polar slice} ($i_0=20000$, $j_0=600$, $100\times 100$).
+Nadir is at $\sim 78\text{--}79^\circ$N, longitude
+$\sim 45\text{--}49^\circ$E (Kara Sea region). \texttt{SST\_In}
+ranges $-15$ to $-3\,^\circ$C in scaled units; values below
+$-3\,^\circ$C lie outside the declared \texttt{valid\_min/valid\_max},
+consistent with sea ice / land / unconverged retrievals.
+\texttt{eastward\_gradient} and \texttt{northward\_gradient} return
+empty (every pixel is \texttt{\_FillValue}) at this latitude.
+
+\paragraph{Equatorial slice} ($i_0 \approx 29259$, $j_0=600$,
+$100\times 100$). Nadir at $\sim 0^\circ$N, $\sim 7^\circ$W (off the
+African coast). \texttt{SST\_In} in $[16.2, 29.0]\,^\circ$C, mean
+$27.4$, std $1.7$. \texttt{eastward\_gradient},
+\texttt{northward\_gradient} populate at $\sim$20\,\% of pixels
+(1\,993 of 10\,000) with magnitudes mostly within $\pm
+0.5\,^\circ$C/km, mean near zero --- as expected for open tropical
+ocean with occasional cloud edges. \texttt{regridded\_sst} populates
+at 36\,\%, range $[26.8, 29.0]\,^\circ$C --- a smoothed / more
+heavily masked version of the same field.
+
+\paragraph{Time-stamp self-consistency.} The scalar
+\texttt{DateTime} returns $1.7041 \times 10^9$\,s, which is
+2024-01-01T01:15:58 UTC, matching the filename's
+\texttt{20240101T011558} token exactly.
+
+\subsection{Metadata gaps discovered in sampling}\label{sec:gaps}
+
+\begin{itemize}
+  \item The Int32 \texttt{latitude} / \texttt{longitude} arrays
+    declare \texttt{units=degrees\_north} / \texttt{degrees\_east}
+    but do \emph{not} declare a \texttt{scale\_factor}. Raw values
+    sampled near the equator are $\sim\pm 500$ (i.e.\ $\pm 0.5$
+    after dividing by $10^3$), and near the pole are
+    $\sim 7.9 \times 10^4$ (i.e.\ $79^\circ$ after dividing by
+    $10^3$). Verified against the Float32 \texttt{nadir\_latitude}
+    and \texttt{nadir\_longitude} (which are in degrees, plain).
+    \emph{The implicit scale on the Int32 coordinates is $10^{-3}$;
+    this is structural information present nowhere in the DMR.}
+  \item No global (root-group) attributes are exposed in the DMR.
+    No \texttt{Conventions}, no \texttt{title}, no
+    \texttt{institution}, no \texttt{processing\_level}, no
+    \texttt{platform}, no \texttt{instrument} attribute. All of
+    that has to be inferred from the filename and the variable
+    naming.
+\end{itemize}
+
+\section{Readable branch \#2: \texttt{gradients\_by\_period/}}\label{sec:gradients}
+
+\subsection{Layout}
+
+A flat directory of 270 NetCDF files,
+\texttt{augmented\_monthly\_stats\_MM\_YYYY.nc}, spanning
+\texttt{01\_2003} through \texttt{12\_2024}. ($22 \times 12 = 264$
+with a small surplus that I have not chased down --- likely a small
+number of stray files or revision tags.) The filename pattern is
+the only temporal metadata: there is no explicit
+\texttt{time} variable inside.
+
+\subsection{Structural metadata (DMR)}
+
+\begin{center}
+\begin{tabular}{@{}lll@{}}
+\toprule
+Dimension & Size & Inferred meaning \\
+\midrule
+\texttt{lon} & 360 & $1^\circ$ longitude bins \\
+\texttt{lat} & 180 & $1^\circ$ latitude bins \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+34 variables, all \texttt{Float64} of shape \texttt{(lon, lat)}.
+\textbf{No semantic metadata.} No \texttt{units}, no \texttt{long\_name},
+no \texttt{standard\_name}, no \texttt{\_FillValue}, no
+coordinate variables, no global attributes. This is the OPeNDAP
+``free-for-all'' that motivates \texttt{grep-dap}.
+
+\subsection{What the names imply}
+
+The variable names follow a consistent grammar:
+
+\begin{lstlisting}
+{day|night}_{sum|}_{quantity}[_squared]
+{day|night}_{pixel|as_pixel|at_pixel}_count
+\end{lstlisting}
+
+That decomposes cleanly into:
+
+\begin{description}[leftmargin=2em,topsep=2pt]
+  \item[Period partition.] \texttt{day\_} vs.\ \texttt{night\_} ---
+    presumably the MODIS Aqua $\sim$13:30 local ascending vs.\
+    $\sim$01:30 descending nodes, partitioned at the per-pixel
+    level upstream.
+  \item[Bookkeeping.] For each quantity we get a sum
+    ($\Sigma$) and a sum of squares ($\Sigma^2$), the canonical
+    pair for computing mean and variance after aggregation. The
+    associated pixel-count $N$ closes the loop.
+  \item[Quantity flavors.] Six families of derived statistics:
+    \begin{enumerate}
+      \item \texttt{SST} (the scalar SST values themselves).
+      \item \texttt{eastward\_gradient} (east component, signed).
+      \item \texttt{northward\_gradient} (north component, signed).
+      \item \texttt{magnitude\_gradient} (per-pixel magnitude in
+        unspecified units; consistent with the orbit-file
+        magnitude having been summed in geographic coordinates).
+      \item \texttt{grad\_as\_per\_km} (along-scan component, per
+        km).
+      \item \texttt{grad\_at\_per\_km} (along-track component, per
+        km).
+      \item \texttt{grad\_mag\_per\_km} (per-km magnitude).
+    \end{enumerate}
+    (Six conceptual families, but $4+3$ named gradient variables
+    because magnitude appears in both swath-relative and
+    geographic coordinate triples.)
+  \item[Three count flavors.] \texttt{pixel\_count} (valid SST),
+    \texttt{as\_pixel\_count} (valid along-scan gradient), and
+    \texttt{at\_pixel\_count} (valid along-track gradient). The
+    fact that the three counts differ confirms that the gradient
+    fields are masked more aggressively than the SST field
+    itself, which matches the orbit-file observation that gradient
+    pixels were entirely empty in the polar slice while SST
+    pixels were not.
+\end{description}
+
+\subsection{Sampled data}\label{sec:gradients-samples}
+
+For \texttt{augmented\_monthly\_stats\_07\_2020.nc}, full $360\times
+180$ reads via \texttt{pydap}:
+
+\begin{center}
+\begin{tabular}{@{}lrr@{}}
+\toprule
+Variable & valid $n$ & range (min, max) \\
+\midrule
+\texttt{day\_pixel\_count}              & 64\,800 & $0$, \quad $2.02 \times 10^{5}$ \\
+\texttt{night\_pixel\_count}            & 64\,800 & $0$, \quad $1.96 \times 10^{5}$ \\
+\texttt{day\_sum\_SST}                  & 63\,431 & $-628$, $5.28 \times 10^{6}$ \\
+\texttt{night\_sum\_SST}                & 64\,028 & $-947$, $5.44 \times 10^{6}$ \\
+\texttt{day\_sum\_magnitude\_gradient}  & 64\,800 & $0$, $1.37 \times 10^{4}$ \\
+\texttt{day\_sum\_eastward\_gradient}   & 64\,800 & $-4\,483$, $2\,587$ \\
+\texttt{day\_sum\_northward\_gradient}  & 64\,800 & $-2\,901$, $6\,113$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Two derived quantities:
+\begin{itemize}
+  \item Per-cell mean SST $\Sigma_{\rm SST} / N_{\rm pix}$ produced
+    NaNs in 24\,900 cells with non-zero $N_{\rm pix}$, indicating
+    that \texttt{day\_sum\_SST} is itself NaN in those cells (NaN
+    is acting as an undeclared fill value). The clean cells fall
+    in the plausible $-2$ to $32\,^\circ$C ocean range
+    (range printed in the script log; full distribution not yet
+    plotted).
+  \item Per-cell mean magnitude gradient $\Sigma_{|\nabla|} /
+    N_{\rm as}$ has mean $0.083\,^\circ$C/km and a tail to
+    $22\,^\circ$C/km. The bulk is consistent with typical ocean
+    SST gradients of $0.01\text{--}0.5\,^\circ$C/km; the tail is
+    almost certainly numerical (cloud-edge / coast-edge
+    artifacts).
+\end{itemize}
+
+\subsection{Inferred semantics for grep-dap to record}
+
+Even with zero attributes in the file, the following can be
+reconstructed with high confidence:
+
+\begin{center}
+\begin{tabular}{@{}lll@{}}
+\toprule
+Variable family & Inferred units & Source of inference \\
+\midrule
+\texttt{*\_pixel\_count} / \texttt{*\_as\_pixel\_count} / \texttt{*\_at\_pixel\_count} & dimensionless (count) & Name + values are nonneg integers in Float64. \\
+\texttt{*\_sum\_SST}, \texttt{*\_sum\_SST\_squared} & $^\circ$C, $^\circ$C${}^2$ & SST in the source orbit files is in $^\circ$C; derived sums inherit units. \\
+\texttt{*\_sum\_eastward\_gradient}, \texttt{*\_sum\_northward\_gradient} & $^\circ$C/km & Source orbit gradients are in $^\circ$C/km. \\
+\texttt{*\_sum\_magnitude\_gradient} & $^\circ$C/km & Same. \\
+\texttt{*\_sum\_grad\_\{as,at,mag\}\_per\_km}, with \texttt{\_squared} & $^\circ$C/km, $(^\circ$C/km$)^2$ & Suffix \texttt{\_per\_km} states the unit; \texttt{as} / \texttt{at} are swath-relative components. \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+What \emph{cannot} be inferred from the file alone (without
+re-examining the orbit data the file is plausibly derived from):
+
+\begin{itemize}
+  \item The orientation of the \texttt{lat} axis (south-to-north
+    or reverse) and the convention for the \texttt{lon} axis
+    ($0\to 360$ or $-180\to +180$). The absence of coordinate
+    variables makes this irrecoverable from metadata alone.
+    \emph{Resolvable by sampling}: check, for example, whether
+    the cell with maximum mean SST sits near the equator
+    (lat-index $\approx 90$ either way) and use the longitude
+    pattern of mean SST to locate the warm pool and the equatorial
+    Atlantic cold tongue.
+  \item The exact definition of \texttt{magnitude\_gradient}
+    relative to the eastward/northward components --- whether the
+    summed magnitude in a cell equals the magnitude of the summed
+    components (almost certainly no) or the sum of per-pixel
+    magnitudes (likely yes). Resolvable analytically only by
+    accessing the upstream pixel-level data; \texttt{grep-dap}
+    can flag the question but not answer it.
+  \item Whether $\Sigma$ and $N$ count the same pixels (e.g.\
+    whether a NaN'd $\Sigma_{\rm SST}$ in a cell with $N_{\rm
+    pix}>0$ means ``$N$ counts gradients, $\Sigma$ counts SST''
+    or means ``arithmetic overflow / undeclared fill''). The
+    sample shows the discrepancy clearly; the cause requires
+    asking the data provider.
+\end{itemize}
+
+\section{Cross-branch picture}\label{sec:crossbranch}
+
+The two readable branches almost certainly form a single pipeline:
+the orbit files in \texttt{SST\_Orbits/} are the L2 input from which
+the monthly gridded statistics in \texttt{gradients\_by\_period/}
+are computed. Three pieces of evidence support that:
+
+\begin{enumerate}
+  \item Vocabulary match. \texttt{eastward\_gradient},
+    \texttt{northward\_gradient}, and \texttt{magnitude\_gradient}
+    appear in both files with the same semantics; units in the
+    orbit file (where stated) are \texttt{C/km}, which is what
+    the gradient-file naming (\texttt{\_per\_km}) implies.
+  \item Quantity match. The day/night, along-scan/along-track
+    split in the gradient files mirrors the way MODIS Aqua data
+    are partitioned (ascending vs.\ descending, swath-relative
+    derivatives) and how the orbit file's masking variables are
+    organized.
+  \item Volume match. $14.4 \text{ orbits/day} \times 31 \text{ d}
+    \approx 446$ orbits per month; each orbit has
+    $40\,271 \times 1\,354 = 5.45 \times 10^7$ pixels; a per-cell
+    \texttt{day\_pixel\_count} max of $2.02 \times 10^5$ is
+    consistent with $\sim$half-orbit (day-only) coverage at MODIS
+    1\,km resolution binned into $1^\circ$ cells near the equator
+    (where one $1^\circ$ cell is roughly $111 \times 111$\,km,
+    i.e.\ $\sim 1.2 \times 10^4$ pixels per pass; with $\sim$15
+    overlapping day passes a month at the equator, $\sim 2 \times
+    10^5$ is the expected upper bound).
+\end{enumerate}
+
+The 403 directories that I could not read complete the picture but
+only hypothetically: \texttt{matchups[\_v2,\_v3]/} plus
+\texttt{iQuamBuoy/} suggest a validation chain (satellite SST vs.\
+buoy SST), and the JAXA/RSS/MUR directories together with
+\texttt{timeSeries[\_v2]/} suggest a multi-source SST archive whose
+top product family is precisely what URI / NASA SST researchers
+typically build.
+
+\section{What this means for grep-dap}\label{sec:meaning}
+
+The exercise produced six concrete observations that bear on the
+project goals stated in \texttt{CLAUDE.md} and
+\texttt{docs/opendap\_readme.tex}.
+
+\begin{enumerate}
+  \item \textbf{Catalog walking is half the inference.} Just from
+    folder and file names, \texttt{grep-dap} can extract platform,
+    sensor, level, producer, version, and rough temporal extent
+    --- before reading a single byte of data. Catalog-name parsing
+    should be a first-class capability, not a fallback.
+  \item \textbf{Inaccessible directories are still signal.} Names
+    of 403'd directories partition by sensor source, geometry,
+    versioning, and matchups even when their contents are
+    unreadable. \texttt{grep-dap} should not drop unreadable
+    entries; it should retain them as catalog facts.
+  \item \textbf{The semantic-metadata distribution is bimodal on
+    this server.} The orbit files are fully CF-flavored (units,
+    standard\_name, scale\_factor, valid\_min, valid\_max,
+    \_FillValue); the derived monthly files have nothing. Real
+    OPeNDAP archives plausibly look like this --- a few rich
+    files surrounded by many sparse ones. Inference strategies
+    that work only when rich attributes are present will not be
+    enough.
+  \item \textbf{Even rich CF metadata has gaps.} The orbit
+    \texttt{latitude/longitude} arrays declare units but omit
+    \texttt{scale\_factor}, requiring a $10^3$ rescale that no
+    naive client will apply. \texttt{grep-dap} should be alert to
+    declared units that are internally inconsistent with raw
+    magnitudes for the declared dtype.
+  \item \textbf{Small reads anchor the inference cheaply.} A
+    single $100\times 100$ slice at the equator placed the SST
+    field firmly in the 16--29$\,^\circ$C ocean range and
+    confirmed gradient units and lat/lon scales. The cost was
+    one DAP4 hyperslab request per variable. For an inferring
+    agent, two or three such reads per dataset is a very low
+    price.
+  \item \textbf{Names are not enough on their own.} The
+    \texttt{magnitude\_gradient} / \texttt{grad\_mag\_per\_km}
+    duality in the gradient files cannot be disambiguated from
+    the schema; only by tracing the orbit-file recipe (or by
+    asking the producer) can the two be reconciled. An honest
+    inference tool flags such ambiguities rather than guessing.
+\end{enumerate}
+
+\section{Process and reproducibility}
+
+All probes and samples are scripted; the scripts live in
+\texttt{scripts/}:
+
+\begin{lstlisting}
+uri_root_walk.py           # parse the root contents.html
+uri_walk_public.py         # walk the two publicly readable branches
+uri_walk_sst_orbits.py     # SST_Orbits structure walk
+uri_sample_data.py         # pydap polar slice + gradient stats
+uri_sample_equator.py      # pydap equatorial slice
+\end{lstlisting}
+
+The chronological log of this exploration is in
+\texttt{docs/test\_case\_uri\_log.tex} with timestamps.
+
+\section{Caveats}
+
+\begin{itemize}
+  \item Two of seventeen directories were readable; the picture
+    above is therefore necessarily incomplete.
+  \item The single orbit and the single monthly-stats file picked
+    for inspection are representative of their branches by
+    construction (one is the first orbit of the most recent full
+    year; the other is mid-2020), not by random sampling.
+  \item No claim about the global attribute set on the
+    \emph{inaccessible} directories is made; everything written
+    about them is inferred from the directory names only.
+  \item The hostname expectation (MODIS-Aqua SST) and the
+    catalog contents happen to agree. \texttt{grep-dap} must
+    record both as separate facts and never conflate ``it is
+    plausible'' with ``it is verified.''
+\end{itemize}
+
+\end{document}

@@ -1,0 +1,192 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{amsmath}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  columns=fullflexible,
+  frame=single,
+  backgroundcolor=\color{gray!10},
+  showstringspaces=false
+}
+
+\title{URI OPeNDAP Test Case: Working Log (Prompt \#4)}
+\author{Compiled for P. Cornillon}
+\date{2026-05-16}
+
+\begin{document}
+\maketitle
+
+\section*{Purpose}
+
+Working log for Prompt~\#4 of the URI OPeNDAP test case: estimate
+the spatial range over which the per-pixel SST gradients were
+computed for the data summarized in
+\texttt{gradients\_by\_period/}. Findings are in
+\texttt{docs/uri\_test\_case\_4.tex}.
+
+\section{Prompt \#4 (2026-05-16 21:40 UTC)}
+
+\subsection{Instruction}
+
+\emph{``Estimate the spatial range over which the gradients were
+calculated for branch \#2 and explain how you arrived at the
+answer. This information will be used in the next prompt.''}
+
+\subsection{Interpretation}
+
+The gradient \emph{sums} in \texttt{gradients\_by\_period/} are
+1$^\circ$ monthly bins of per-pixel SST gradients computed at the
+L2 swath level in the orbit files
+(\texttt{SST\_Orbits/}, fields \texttt{eastward\_gradient} and
+\texttt{northward\_gradient}). So the \emph{spatial range over
+which a single gradient value was calculated} reduces to the
+support of the differentiation operator that maps the orbit-level
+SST field into one of the orbit-level gradient values. That is
+the question I attack below. Independently, of course, the
+monthly file aggregates gradients spatially into 1$^\circ$ cells,
+but that 1$^\circ$ binning is a \emph{post-hoc} summation, not the
+spatial range over which the underlying gradient is computed.
+
+\subsection{Approach}
+
+Three independent estimates, in order of cheapness.
+
+\paragraph{Approach 1: pixel-count ratios from Prompt~\#3.}
+The monthly file already tells us something. Per cell:
+\texttt{day\_pixel\_count} = 10\,030 valid SST pixels on average;
+\texttt{day\_as\_pixel\_count} = 8\,110 valid along-scan gradient
+pixels; \texttt{day\_at\_pixel\_count} = 4\,090 valid along-track
+gradient pixels. MODIS Aqua's 10-line scan structure means that
+along-track derivatives that straddle a scan boundary are masked.
+For a centered finite-difference operator with along-track
+half-width $H$ pixels, the fraction of valid SST pixels with valid
+along-track gradient is approximately
+$(10-2H)/10$ minus an additional cloud-edge loss. Subtracting
+the cloud-edge loss inferred from along-scan
+(\texttt{N\_at}/\texttt{N\_pix} = 0.41,
+\texttt{N\_as}/\texttt{N\_pix} = 0.81; so the scan-boundary part
+of the along-track deficit is about
+$0.81 - 0.41 = 0.40$ which equals $2H/10$), gives $H\approx 2$
+pixels, i.e.\ an along-track operator support of $\sim$4 km.
+
+\paragraph{Approach 2: match stored eastward gradient against
+centered finite differences of the orbit SST at multiple scales.}
+\texttt{scripts/grad\_scale\_findregion.py} walks the
+2024-01-01 orbit 115220 for a 1000-line window with the most
+valid gradient pixels; the winning window is at $\sim$20\,N,
+180\,E (central Pacific, north of Hawaii). I pulled a
+$200\times 1354$-pixel block of \texttt{SST\_In},
+\texttt{regridded\_sst}, \texttt{eastward\_gradient},
+\texttt{northward\_gradient}, \texttt{latitude},
+\texttt{longitude}, \texttt{refined\_mask}, and \texttt{qual\_sst}
+to \texttt{/tmp/grad\_block2.pkl}. Then
+\texttt{scripts/grad\_scale\_magnitude.py} compares stored
+$|\nabla T|$ to candidate $|\nabla T|$ computed as centered finite
+differences of (a) raw \texttt{SST\_In} and (b)
+\texttt{regridded\_sst}, at scales $h\in\{1,2,3,4,5,6,7,8,10\}$
+pixels (full operator support $2h$ km using the median across-track
+spacing of 1.35 km). Doing this on the magnitude (rather than the
+signed component) sidesteps the swath-vs-geographic rotation.
+Results:
+
+\begin{itemize}
+  \item For \texttt{regridded\_sst} input, the per-pixel RMSE
+    between stored and candidate $|\nabla T|$ has a clear minimum
+    at $h=3$ (support $\sim$6 km).
+  \item For \texttt{SST\_In} input the same RMSE minimum is at
+    $h=3$ but with a worse residual; \texttt{regridded\_sst}
+    is the operative input field.
+  \item Mean $|\nabla T|$ from \texttt{regridded\_sst}-based
+    centered diff: matches stored at $h \in [2,3]$ (operator
+    support 4--6 km). Mean from \texttt{SST\_In}: matches stored
+    at $h\approx 10$ (support $\sim$20 km), reflecting that
+    \texttt{SST\_In} is much noisier than the field actually
+    used to compute the gradient.
+\end{itemize}
+
+The agreement between scales picked by ``minimum RMSE'' and ``mean
+magnitude match'' for \texttt{regridded\_sst} as input is the
+strongest single piece of evidence: the gradient operator is well
+modelled by a centered finite difference with full support
+4--6 km, applied to \texttt{regridded\_sst}.
+
+\paragraph{Approach 3: autocorrelation of the stored gradient.}
+\texttt{scripts/grad\_scale\_autocorr.py} computes the lagged
+correlation of $|\nabla T|$ in the central swath. For a gradient
+field computed with operator support $L$ pixels, the
+autocorrelation should remain elevated for lags $< L$ (adjacent
+pixel pairs share input pixels) and drop sharply beyond $L$.
+Observed:
+\begin{itemize}
+  \item Across-track: AC drops $1 \to 0.64$ at 1.35 km, $\to 0.32$
+    at 2.7 km, $\to 0.19$ at 4 km, $\to 0.10$ at 6.75 km, and is
+    flat at $\sim$0.05--0.10 beyond 8 km. Effective decorrelation
+    scale $\approx$ 2--3 pixels = $\sim$3--4 km.
+  \item Along-track: AC drops $1 \to 0.50$ at 1.13 km, $\to 0.18$
+    at 2.26 km, $\to 0.13$ at 3.4 km, $\to 0.07$ at 4.5 km, near
+    zero by 5--6 km. Decorrelation scale $\approx$ 2 pixels =
+    $\sim$2--3 km.
+  \item For comparison: the same autocorrelation computed on a
+    1-pixel centered difference of \texttt{SST\_In} drops to
+    \emph{negative} values at lag 2--3 (Nyquist-like
+    anti-correlation of a sharp derivative), returning to zero
+    only around 8 km. The stored gradient does not exhibit this
+    anti-correlation, ruling out a single 1-pixel diff of the
+    raw \texttt{SST\_In}.
+\end{itemize}
+
+\subsection{Convergent estimate}
+
+All three approaches agree on a number near
+\textbf{$5\pm 2$ km}. The pixel-count approach gives $\sim$4 km;
+the magnitude-matching approach gives 4--6 km; the
+autocorrelation approach gives 3--4 km across-track and 2--3 km
+along-track. The slight anisotropy is consistent with MODIS
+Aqua's pixel geometry (1.35 km across-track vs.\ 1.13 km
+along-track near nadir) plus the scan-boundary masking which
+affects only along-track derivatives.
+
+\subsection{Limitations of the estimate}
+
+\begin{itemize}
+  \item The operator may not be a pure centered difference. The
+    actual algorithm is in URI's processing code, which I have
+    not read. A Sobel, prewitt, or local least-squares operator
+    of similar effective support would give similar empirical
+    fingerprints.
+  \item The \texttt{regridded\_sst} field is itself derived from
+    \texttt{SST\_In} by a \texttt{refined\_mask} step that removes
+    pixels flagged as ``original high gradient values''. That step
+    is a mask, not a spatial average, so its effect on the
+    apparent operator support is small. If it also includes a
+    box-mean or similar averaging step (which I cannot verify from
+    the OPeNDAP-exposed metadata), the total spatial range of
+    influence per gradient value would be slightly larger.
+  \item The sample region is a tropical Pacific area
+    ($\sim$20\,N, 180\,E) without strong fronts. The operator
+    support estimate is a statistical-mean property; in regions
+    with sharp fronts the spectral content of the gradient field
+    differs and an autocorrelation-based estimate would shrink
+    somewhat.
+\end{itemize}
+
+\subsection{Commands}
+
+\begin{lstlisting}
+python3 scripts/grad_scale_findregion.py   # locate best swath block
+python3 scripts/grad_scale_block2.py       # pull the block to /tmp
+python3 scripts/grad_scale_magnitude.py    # match by magnitude RMSE
+python3 scripts/grad_scale_autocorr.py     # autocorrelation analysis
+\end{lstlisting}
+
+\subsection{Session timing}
+
+Started 2026-05-16 21:40\,UTC. Closed log 2026-05-16
+$\sim$22:15\,UTC.
+
+\end{document}

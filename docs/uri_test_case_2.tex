@@ -1,0 +1,621 @@
+\documentclass[11pt]{article}
+\usepackage[margin=0.9in]{geometry}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{amsmath}
+\usepackage{ragged2e}
+\usepackage{seqsplit}
+
+% Be much more permissive about line breaking; long \texttt{} strings
+% would otherwise produce overfull hboxes in the abstract and tables.
+\emergencystretch=6em
+\tolerance=9999
+\hbadness=10000
+\sloppy
+
+% Allow line breaks inside \texttt at any underscore.
+\makeatletter
+\let\old@texttt\texttt
+\renewcommand{\texttt}[1]{\old@texttt{\hbadness=10000 \relax #1}}
+\makeatother
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  columns=fullflexible,
+  frame=single,
+  backgroundcolor=\color{gray!10},
+  showstringspaces=false
+}
+
+% Column types that wrap and ragged-right.
+\newcolumntype{L}[1]{>{\RaggedRight\arraybackslash\hangindent=1em}p{#1}}
+\newcommand{\status}[1]{\textbf{#1}}
+\newcommand{\miss}[1]{\textbf{#1}}
+\newcommand{\guess}[1]{\textit{#1}}
+
+\title{COARDS Audit of \texttt{SST\_Orbits/} on the URI OPeNDAP Server\\
+       \large grep-dap test case, Prompt \#2}
+\author{Compiled for P. Cornillon}
+\date{2026-05-16}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+This document supplements the Prompt~\#1 exploration of
+\url{https://sst-aqua.gso.uri.edu/opendap/} by auditing the
+COARDS-essential semantic metadata of every variable in the
+publicly readable \texttt{SST\_Orbits/} branch, using the
+representative orbit file
+\texttt{AQUA\_MODIS\_orbit\_115220\_\allowbreak 20240101T011558\_\allowbreak L2\_SST-URI\_\allowbreak 24-2.nc4}
+as the sample. For each of the 44 variables across the three groups
+of the file, the audit reports whether the COARDS-essential
+attributes are complete; for the 23 variables judged incomplete,
+the audit lists the missing attributes and a best-guess value for
+each. The audit also lists, per variable, semantic metadata not
+strictly required by COARDS that would significantly facilitate
+use --- typically \texttt{coordinates}, \texttt{ancillary\_variables},
+\texttt{cell\_methods}, \texttt{flag\_values}/\texttt{flag\_meanings},
+and provenance fields. Two factual errors in the Prompt~\#1
+write-up are corrected.
+\end{abstract}
+
+\tableofcontents
+
+\section{Background and corrections to Prompt \#1}
+
+The Prompt~\#1 document treats \texttt{SST\_Orbits/} as
+``richly CF-annotated''; the deeper read carried out for this
+prompt confirms that overall assessment but corrects two specific
+claims in Prompt~\#1.
+
+\begin{enumerate}
+  \item Prompt~\#1 stated that the orbit DMR exposes no root-group
+    (global) attributes. The DMR in fact carries 22 root-group
+    attributes (\S\ref{sec:global}) including
+    \texttt{title}, \texttt{Conventions="CF-1.5"}, an ACDD-style
+    discovery block, and full provenance and contact
+    information. The previous omission was caused by a flat-regex
+    parser that only matched attribute elements inside
+    \texttt{<Variable>} bodies.
+  \item Prompt~\#1 stated that the Int32 \texttt{latitude} and
+    \texttt{longitude} variables in the orbit file declare
+    \texttt{units} but \emph{not} a \texttt{scale\_factor}, and
+    that the implicit factor of $10^{-3}$ would have to be
+    inferred. The DMR in fact declares \texttt{scale\_factor=0.001}
+    and \texttt{add\_offset=0} on those variables. The previous
+    error was the same flat-regex parsing issue: only the first
+    few attributes per variable were being captured.
+\end{enumerate}
+
+This document is built on a depth-aware DMR parser
+(\texttt{scripts/sst\_orbits\_dmr\_inventory.py}) and a COARDS
+scorer (\texttt{scripts/sst\_orbits\_coards\_audit.py}); both are
+checked into the repository and emit the JSON file used to
+generate the tables below.
+
+\section{COARDS criteria applied}\label{sec:criteria}
+
+COARDS is the predecessor of CF; CF subsumes it. For this audit a
+deliberately strict reading of COARDS is used, namely that an
+``essential'' variable carries:
+
+\begin{description}[leftmargin=2em,topsep=2pt,style=nextline]
+  \item[\texttt{units}.] A UDUNITS-compatible string. For
+    latitudes one of \{\texttt{degrees\_north},
+    \texttt{degree\_north}, \texttt{degree\_N},
+    \texttt{degrees\_N}, \texttt{degreeN}, \texttt{degreesN}\}; for
+    longitudes the corresponding east set. For absolute-time
+    variables the string must be of the form
+    \texttt{<unit> since <reference>}.
+  \item[\texttt{long\_name}.] A human-readable description.
+    COARDS recommends rather than requires it, but it is the
+    single most useful attribute for an outside reader; the audit
+    treats it as required.
+  \item[\texttt{\_FillValue}.] For every non-scalar, non-string
+    variable that may carry missing data.
+  \item[\texttt{scale\_factor} \& \texttt{add\_offset}.] If
+    either is set, the other must also be set; this rules out
+    silently dropped scaling.
+\end{description}
+
+The audit additionally treats the units string \texttt{"C"} as a
+COARDS failure --- it is not in UDUNITS (where \texttt{C} means
+\emph{coulomb}); the COARDS-compatible string is
+\texttt{degree\_Celsius} (or \texttt{K}). \texttt{"C/km"} is
+flagged for the same reason.
+
+\section{Global (root-group) attributes}\label{sec:global}
+
+The orbit file's root group exposes 22 attributes. They fall into
+three groups:
+
+\sloppy
+\begin{description}[leftmargin=2em,topsep=2pt,style=nextline]
+  \item[Conventions and identity.]
+    \texttt{title="Conditioned 1km (L2) MODIS AQUA SST"},
+    \texttt{Conventions="CF-1.5"},
+    \texttt{Metadata\_Conventions=}\linebreak[1]\texttt{"Unidata Dataset Discovery v1.0"},
+    \texttt{standard\_name\_vocabulary="CF-1.5"},
+    \texttt{uuid="03bf4c3e-7598-4264-a863-dba03d2a6d46"},
+    \texttt{cdm\_data\_type="Grid"}.
+  \item[Provenance.] \texttt{date\_created},
+    \texttt{source="Satellite observation"},
+    \texttt{history="\{17-May-2025 09:20:41 :
+    Fix\_MODIS\_Mask version1:$\langle$uuid$\rangle$\}"},
+    \texttt{Summary} (a free-text paragraph stating the file
+    is derived from L2 MODIS Aqua granules from NASA's
+    OceanColor web site),
+    \texttt{contributor\_name="NASA"},
+    \texttt{contributor\_role="Generated SST fields from
+    MODIS data."}
+  \item[Contacts and licence.] \texttt{creator\_name="Peter
+    Cornillon"}, \texttt{creator\_url},
+    \texttt{creator\_email},
+    \texttt{institution="University of Rhode Island - Graduate
+    School of Oceanography"},
+    \texttt{project="SST Fronts"},
+    \texttt{acknowledgement}, \texttt{license},
+    \texttt{publisher\_name="SST Fronts"},
+    \texttt{publisher\_url}, \texttt{publisher\_institution}.
+\end{description}
+\fussy
+
+\paragraph{COARDS status.} The minimum COARDS / NUG global
+attribute set is \{\texttt{Conventions}, \texttt{title},
+\texttt{history}, \texttt{source}, \texttt{references},
+\texttt{comment}, \texttt{institution}\}. Of these, five
+(\texttt{Conventions}, \texttt{title}, \texttt{history},
+\texttt{source}, \texttt{institution}) are present and one
+(\texttt{references}) is absent. The \texttt{comment} attribute is
+not present under that name; \texttt{Summary} fills the same role
+but a CF/COARDS-aware reader would not find it under the canonical
+key. \textbf{Best-guess additions:}
+
+\begin{itemize}
+  \item \texttt{Conventions = "CF-1.8"}~--- the file already
+    claims CF-1.5; bumping to a recent version is harmless and
+    forces a re-validation that would catch the \texttt{units="C"}
+    issues described below.
+  \item \texttt{references = "Cornillon, P., et al., SST Fronts
+    project,
+    \url{http://www.sstfronts.org}; MODIS Aqua L2 SST,
+    NASA OceanColor;
+    \url{https://oceancolor.gsfc.nasa.gov/}"}.
+  \item \texttt{comment = $\langle$ the existing Summary text $\rangle$};
+    that is, alias the \texttt{Summary} attribute under the
+    standard \texttt{comment} key.
+  \item \texttt{platform = "Aqua"}, \texttt{instrument =
+    "MODIS"}, \texttt{processing\_level = "L2"},
+    \texttt{product\_version = "URI 24-2"} --- these are not
+    strictly COARDS but every modern catalog scraper (ACDD,
+    GCMD) expects them.
+  \item \texttt{geospatial\_lat\_min/lat\_max/lon\_min/lon\_max}
+    and \texttt{time\_coverage\_start/end} (filled from the
+    orbit's actual extent) --- ACDD, not COARDS, but essential
+    for any harvester.
+  \item \texttt{keywords = "Earth Science > Oceans > Ocean
+    Temperature > Sea Surface Temperature; Earth Science >
+    Oceans > Ocean Temperature > SST Fronts; Earth Science >
+    Oceans > Ocean Temperature > SST Gradients"} --- GCMD
+    keywords for discoverability.
+\end{itemize}
+
+\section{Per-variable assessment}
+
+Three tables follow, one per group, listing every variable, its
+COARDS status, the COARDS-essential attributes that are missing
+(with a best-guess value for each), and a list of non-COARDS
+attributes whose addition would significantly facilitate use.
+
+In each table the second column reads ``Complete'' if all of
+\texttt{units}, \texttt{long\_name}, \texttt{\_FillValue}, and
+\texttt{scale\_factor}/\texttt{add\_offset} (where applicable) are
+present and the \texttt{units} string is COARDS-compatible.
+Otherwise it lists the missing items in the form
+\miss{attr} $\to$ \guess{best-guess value}.
+
+\subsection{Root group (\texttt{/})}
+
+\footnotesize
+\begin{longtable}{@{}L{3.6cm} L{5.9cm} L{6.7cm}@{}}
+\toprule
+\textbf{Variable} & \textbf{COARDS: status / missing $\to$ guess} & \textbf{Recommended non-COARDS additions} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Variable} & \textbf{COARDS: status / missing $\to$ guess} & \textbf{Recommended non-COARDS additions} \\
+\midrule
+\endhead
+
+\texttt{SST\_In} \newline Int16 (ny,nx)
+& \status{Incomplete.} \miss{units} $\to$ \guess{\texttt{degree\_Celsius}} (the file declares \texttt{"C"}, which is UDUNITS \emph{coulomb}).
+& \texttt{coordinates="latitude longitude DateTime"};
+  \texttt{ancillary\_variables="qual\_sst refined\_mask"};
+  \texttt{cell\_methods="area: point"};
+  \texttt{source="MODIS Aqua L2 SST, NASA OceanColor"};
+  \texttt{coverage\_content\_type="physicalMeasurement"}. \\
+
+\texttt{regridded\_sst} \newline Int16 (ny,nx)
+& \status{Incomplete.} \miss{units} $\to$ \guess{\texttt{degree\_Celsius}}.
+& \texttt{coordinates=}\linebreak[1]\texttt{"regridded\_latitude regridded\_longitude DateTime"};
+  \texttt{ancillary\_variables="qual\_sst refined\_mask"};
+  \texttt{cell\_methods="area: mean"};
+  \texttt{comment="SST after masking high-gradient pixels and regridding."} \\
+
+\texttt{eastward\_gradient} \newline Int32 (ny,nx)
+& \status{Incomplete.} \miss{units} $\to$ \guess{\texttt{degree\_Celsius km-1}} (\texttt{"C/km"} is not UDUNITS).
+& \texttt{coordinates="latitude longitude DateTime"};
+  \texttt{ancillary\_variables="refined\_mask qual\_sst"};
+  \texttt{cell\_methods="ny: derivative nx: derivative (interval: 1 pixel)"};
+  \texttt{comment="East component of the SST gradient computed from regridded\_sst."} \\
+
+\texttt{northward\_gradient} \newline Int32 (ny,nx)
+& \status{Incomplete.} \miss{units} $\to$ \guess{\texttt{degree\_Celsius km-1}}.
+& Same as \texttt{eastward\_gradient} with \texttt{comment} adjusted to ``North component\dots'' \\
+
+\texttt{refined\_mask} \newline Int8 (ny,nx)
+& \status{Incomplete.} \miss{units} $\to$ \guess{\texttt{"1"}} (dimensionless flag).
+& Replace malformed \texttt{flag\_masks=0} (a single scalar of 0 does not match CF \texttt{flag\_masks} semantics) with
+  \texttt{flag\_values="0 1"} and
+  \texttt{flag\_meanings="good bad"}. Add
+  \texttt{coordinates="latitude longitude DateTime"} and
+  \texttt{standard\_name="sea\_surface\_temperature status\_flag"}. \\
+
+\texttt{qual\_sst} \newline Int8 (ny,nx)
+& \status{Incomplete.} \miss{units} $\to$ \guess{\texttt{"1"}}.
+& Replace \texttt{flag\_masks=0} with
+  \texttt{flag\_values="0 1 2 3 4"} and
+  \texttt{flag\_meanings="best good questionable bad notprocessed"}.
+  Rename \texttt{standard\_name} from
+  \texttt{"sea\_surface\_temperature"} (which is incorrect for a
+  flag) to
+  \texttt{"sea\_surface\_temperature status\_flag"}. Add
+  \texttt{coordinates="latitude longitude DateTime"}. \\
+
+\texttt{latitude} \newline Int32 (ny,nx)
+& \status{Complete.} \texttt{units=degrees\_north},
+  \texttt{scale\_factor=0.001}, \texttt{add\_offset=0},
+  \texttt{\_FillValue=-2147483647},
+  \texttt{long\_name="latitude"}, \texttt{valid\_min/max} set.
+& \texttt{axis="Y"}; could add
+  \texttt{comment="Per-pixel geodetic latitude on WGS-84."} \\
+
+\texttt{longitude} \newline Int32 (ny,nx)
+& \status{Complete.} \texttt{units=degrees\_east},
+  \texttt{scale\_factor=0.001}, \texttt{add\_offset=0},
+  \texttt{\_FillValue} present, \texttt{long\_name="Longitude"},
+  \texttt{valid\_min/max=$\pm$720000}. The valid range of
+  $\pm 720^\circ$ permits unwrapped longitudes along an orbit ---
+  unusual but coherent.
+& \texttt{axis="X"};
+  \texttt{comment="Unwrapped longitude; may exceed $\pm 180^\circ$ within a single orbit."} \\
+
+\texttt{regridded\_latitude} \newline Int32 (ny,nx)
+& \status{Complete.}
+& \texttt{axis="Y"}; \texttt{comment="Latitude after the regridding step that produced \texttt{regridded\_sst}."} \\
+
+\texttt{regridded\_longitude} \newline Int32 (ny,nx)
+& \status{Complete.}
+& \texttt{axis="X"}; \texttt{comment} analogous to above. \\
+
+\texttt{nadir\_latitude} \newline Float32 (ny)
+& \status{Complete.}
+& \texttt{axis="Y"};
+  \texttt{coordinates="DateTime"};
+  \texttt{comment="Sub-spacecraft (nadir) latitude per scan line."} \\
+
+\texttt{nadir\_longitude} \newline Float32 (ny)
+& \status{Complete.}
+& \texttt{axis="X"}; \texttt{comment} analogous. \\
+
+\texttt{left\_swath\_edge\_}\linebreak[1]\texttt{trackline\_latitude} \newline Float32 (ny)
+& \status{Complete.}
+& \texttt{axis="Y"};
+  \texttt{comment="Geodetic latitude of the left (port-side) swath edge per scan."} \\
+
+\texttt{right\_swath\_edge\_}\linebreak[1]\texttt{trackline\_latitude} \newline Float32 (ny)
+& \status{Complete.}
+& \texttt{axis="Y"}; analogous comment. \\
+
+\texttt{left\_swath\_edge\_}\linebreak[1]\texttt{trackline\_longitude} \newline Float32 (ny)
+& \status{Complete.}
+& \texttt{axis="X"}; analogous comment. \\
+
+\texttt{right\_swath\_edge\_}\linebreak[1]\texttt{trackline\_longitude} \newline Float32 (ny)
+& \status{Complete.}
+& \texttt{axis="X"}; analogous comment. \\
+
+\texttt{time\_from\_start\_orbit} \newline Float32 (ny)
+& \status{Complete} as a duration (\texttt{units="seconds"} is acceptable for elapsed time).
+& \texttt{standard\_name="time"} is technically wrong (this is an elapsed-time, not an absolute time); a closer fit would be \texttt{standard\_name="forecast\_period"} (CF lacks a clean ``time-since-orbit-start'' name) and a \texttt{comment="Seconds since the scalar DateTime (orbit start, 1970-01-01 epoch seconds)."}.\newline
+  Also: \texttt{axis="T"} is debatable on a 1-D auxiliary
+  coordinate but is consistent with CF practice. \\
+
+\texttt{DateTime} \newline Float64 scalar
+& \status{Incomplete.} \miss{units} $\to$ \guess{\texttt{seconds since 1970-01-01 00:00:00 UTC}} (current \texttt{units="seconds"} lacks the required reference; the reference is stated only in the \texttt{long\_name}).
+& \texttt{calendar="gregorian"}; \texttt{axis="T"};
+  \texttt{long\_name="Orbit start time"} (clearer than the current
+  ``time since 1970-01-01 00:00:00.0''). \\
+
+\texttt{region\_start} \newline Int32 (i)
+& \status{Incomplete.} \miss{units} $\to$ \guess{\texttt{"1"}} (dimensionless index);
+  \miss{\_FillValue} $\to$ \guess{\texttt{-2147483647}} (matches the
+  Int32 convention used elsewhere).
+& \texttt{long\_name="Start \texttt{ny}-index of each of the 5 along-orbit regions."};
+  \texttt{comment="Pairs with region\_end to delimit 5 along-orbit subregions; useful for restricting processing."} \\
+
+\texttt{region\_end} \newline Int32 (i)
+& \status{Incomplete.} Same two items as \texttt{region\_start}.
+& Analogous to \texttt{region\_start}. \\
+\bottomrule
+\end{longtable}
+
+\subsection{Group \texttt{/Regrid\_to\_L2eqa}}
+
+This group has the additional caveat that the \texttt{nyAMSR\_E}
+and \texttt{nxAMSR\_E} dimensions are both 1 in the sample file:
+AMSR-E stopped producing data in October 2011, so the AMSR-E
+variables in a 2024 file are $1\times 1$ placeholders, not
+populated arrays. The schema persists past the instrument's
+lifetime. A reader without that context will see an apparently
+intentional $1\times 1$ field and may treat it as authoritative;
+adding a \texttt{comment} attribute is the cheapest fix.
+
+\footnotesize
+\begin{longtable}{@{}L{3.8cm} L{5.8cm} L{6.6cm}@{}}
+\toprule
+\textbf{Variable} & \textbf{COARDS: status / missing $\to$ guess} & \textbf{Recommended non-COARDS additions} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Variable} & \textbf{COARDS: status / missing $\to$ guess} & \textbf{Recommended non-COARDS additions} \\
+\midrule
+\endhead
+
+\texttt{L2eqa\_MODIS\_SST} \newline Int16 (nyL2eqa,nxL2eqa)
+& \status{Incomplete.} \miss{units} $\to$ \guess{\texttt{degree\_Celsius}}.
+& \texttt{coordinates="L2eqaLat L2eqaLon DateTime"};
+  \texttt{cell\_methods="area: mean"};
+  \texttt{ancillary\_variables="L2eqa\_MODIS\_std\_SST L2eqa\_MODIS\_num\_SST"};
+  \texttt{comment="MODIS SST averaged into an L2 equal-area cell."} \\
+
+\texttt{L2eqa\_MODIS\_std\_SST} \newline Int16 (nyL2eqa,nxL2eqa)
+& \status{Incomplete.} \miss{units} $\to$ \guess{\texttt{degree\_Celsius}}.
+& \texttt{coordinates="L2eqaLat L2eqaLon DateTime"};
+  \texttt{cell\_methods="area: standard\_deviation"};
+  \texttt{comment="Within-cell standard deviation of MODIS SST contributions."} \\
+
+\texttt{L2eqa\_MODIS\_num\_SST} \newline Int16 (nyL2eqa,nxL2eqa)
+& \status{Incomplete.} \miss{units} $\to$ \guess{\texttt{"1"}} (the
+  declared \texttt{units="C"} is wrong; this is a pixel count, not
+  a temperature).
+& \texttt{coordinates="L2eqaLat L2eqaLon DateTime"};
+  \texttt{cell\_methods="area: count"};
+  \texttt{long\_name="Number of valid MODIS SST contributions in the L2eqa cell"} (clearer than current). \\
+
+\texttt{L2eqa\_AMSR\_E\_SST} \newline Int16 (nyL2eqa,nxL2eqa)
+& \status{Incomplete.} \miss{units} $\to$ \guess{\texttt{degree\_Celsius}}.
+& \texttt{coordinates="L2eqaLat L2eqaLon DateTime"};
+  \texttt{source="AMSR-E aboard NASA Aqua (operational 2002-06 to 2011-10)"};
+  \texttt{comment="In files past 2011-10 the underlying instrument is retired; field is a 1x1 placeholder."} \\
+
+\texttt{L2eqa\_AMSR\_E\_wind\_speed} \newline Int16 (nyL2eqa,nxL2eqa)
+& \status{Incomplete.} \miss{units} $\to$ \guess{\texttt{m s-1}} (the declared
+  \texttt{units="mm"} is almost certainly wrong; the
+  packing \texttt{scale\_factor=0.2}, \texttt{add\_offset=25.4}
+  yields a 0--50.8 range, consistent with wind speed in m s$^{-1}$
+  and matching the sibling \texttt{AMSR\_E\_wind\_speed} which is
+  labelled \texttt{m s-1} natively).
+& \texttt{coordinates="L2eqaLat L2eqaLon DateTime"};
+  \texttt{source="AMSR-E aboard NASA Aqua (operational 2002-06 to 2011-10)"};
+  \texttt{comment} on AMSR-E retirement, as above. \\
+
+\texttt{L2eqa\_AMSR\_E\_water\_vapor} \newline Int16 (nyL2eqa,nxL2eqa)
+& \status{Complete.}
+& \texttt{coordinates="L2eqaLat L2eqaLon DateTime"};
+  retirement comment. \\
+
+\texttt{L2eqa\_AMSR\_E\_}\linebreak[1]\texttt{cloud\_liquid\_water} \newline Int16 (nyL2eqa,nxL2eqa)
+& \status{Complete.}
+& As above. \\
+
+\texttt{L2eqaLat} \newline Int32 (ny,nx) [in group]
+& \status{Complete.} \texttt{units=degrees\_north},
+  \texttt{scale\_factor=0.001}.
+& \texttt{axis="Y"};
+  \texttt{comment="Latitude of L2 equal-area cell centroid."} \\
+
+\texttt{L2eqaLon} \newline Int32 (nyL2eqa,nxL2eqa)
+& \status{Complete.} \texttt{units=degrees\_east},
+  \texttt{scale\_factor=0.001}.
+& \texttt{axis="X"}; analogous comment. \\
+
+\texttt{AMSR\_E\_SST} \newline Int16 (nyAMSR\_E,nxAMSR\_E)
+& \status{Incomplete.} \miss{units} $\to$ \guess{\texttt{degree\_Celsius}}.
+& \texttt{coordinates="AMSR\_E\_lat AMSR\_E\_lon DateTime"};
+  \texttt{source="AMSR-E aboard NASA Aqua"};
+  retirement comment. \\
+
+\texttt{AMSR\_E\_wind\_speed} \newline Int16 (nyAMSR\_E,nxAMSR\_E)
+& \status{Complete.} \texttt{units="m s-1"} is UDUNITS-compatible.
+& \texttt{coordinates="AMSR\_E\_lat AMSR\_E\_lon DateTime"};
+  retirement comment. \\
+
+\texttt{AMSR\_E\_water\_vapor} \newline Int16 (nyAMSR\_E,nxAMSR\_E)
+& \status{Complete.}
+& \texttt{coordinates="AMSR\_E\_lat AMSR\_E\_lon DateTime"};
+  retirement comment;
+  \texttt{long\_name="AMSR-E columnar water vapor"} (more specific than current). \\
+
+\texttt{AMSR\_E\_cloud\_liquid\_water} \newline Int16 (nyAMSR\_E,nxAMSR\_E)
+& \status{Complete.}
+& As above. \\
+
+\texttt{AMSR\_E\_lat} \newline Int32 (nyAMSR\_E,nxAMSR\_E)
+& \status{Complete.}
+& \texttt{axis="Y"}; retirement comment. \\
+
+\texttt{AMSR\_E\_lon} \newline Int32 (nyAMSR\_E,nxAMSR\_E)
+& \status{Complete.}
+& \texttt{axis="X"}; retirement comment. \\
+
+\texttt{MODIS\_SST\_on\_AMSR\_E\_grid} \newline Int16 (nyAMSR\_E,nxAMSR\_E)
+& \status{Incomplete.} \miss{units} $\to$ \guess{\texttt{degree\_Celsius}}.
+& \texttt{coordinates="AMSR\_E\_lat AMSR\_E\_lon DateTime"};
+  \texttt{cell\_methods="area: mean"};
+  \texttt{comment="MODIS L2eqa SST resampled onto the AMSR-E footprint."} \\
+
+\texttt{convolved\_MODIS\_}\linebreak[1]\texttt{on\_AMSR\_E\_grid} \newline Int16 (nyAMSR\_E,nxAMSR\_E)
+& \status{Incomplete.} \miss{units} $\to$ \guess{\texttt{degree\_Celsius}}.
+& \texttt{coordinates="AMSR\_E\_lat AMSR\_E\_lon DateTime"};
+  \texttt{cell\_methods="area: convolution"};
+  \texttt{comment="MODIS L2eqa SST convolved with the AMSR-E antenna pattern; the apples-to-apples comparison field for AMSR\_E\_SST."} \\
+\bottomrule
+\end{longtable}
+
+\subsection{Group \texttt{/contributing\_granules}}
+
+This group is metadata about the L2 input granules stitched into the
+orbit. It is the weakest annotated group in the file; six of seven
+variables fail the strict audit.
+
+\begin{longtable}{@{}L{3.0cm} L{6.4cm} L{6.8cm}@{}}
+\toprule
+\textbf{Variable} & \textbf{COARDS: status / missing $\to$ guess} & \textbf{Recommended non-COARDS additions} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Variable} & \textbf{COARDS: status / missing $\to$ guess} & \textbf{Recommended non-COARDS additions} \\
+\midrule
+\endhead
+
+\texttt{filenames} \newline String (name\_length,nGranules)
+& \status{Complete.} (String variables need no \texttt{units} or \texttt{\_FillValue}.)
+& \texttt{long\_name=}\linebreak[1]\texttt{"Source MODIS L2 granule filenames"};
+  \texttt{comment="From NASA OceanData"}\linebreak[1] \texttt{(oceandata.sci.gsfc.nasa.gov)}. \\
+
+\texttt{start\_time} \newline Float64 (nGranules)
+& \status{Incomplete.} \miss{units} $\to$ \guess{\texttt{seconds since 1970-01-01 00:00:00 UTC}} (current \texttt{units="seconds"} lacks the reference; the reference is hidden in the \texttt{long\_name});
+  \miss{\_FillValue} $\to$ \guess{\texttt{NaN}}.
+& \texttt{calendar="gregorian"};
+  \texttt{long\_name="Granule start time"}. \\
+
+\texttt{end\_time} \newline Float64 (nGranules)
+& \status{Incomplete.} Same two items as \texttt{start\_time}.
+& \texttt{calendar="gregorian"};
+  \texttt{long\_name="Granule end time"}. \\
+
+\texttt{granule\_start\_index} \newline Float64 \linebreak[1](max\_indices,\linebreak[1]nGranules)
+& \status{Incomplete.} \miss{units} $\to$ \guess{\texttt{"1"}} (a dimensionless index).
+  Note: \texttt{\_FillValue=NaN} \emph{is} present.
+& \texttt{long\_name="First scan-line index within the source granule contributing to this orbit."} \\
+
+\texttt{granule\_end\_index} \newline Float64 \linebreak[1](max\_indices,\linebreak[1]nGranules)
+& \status{Incomplete.} \miss{units} $\to$ \guess{\texttt{"1"}}.
+& \texttt{long\_name="Last scan-line index within the source granule contributing to this orbit."} \\
+
+\texttt{orbit\_start\_index} \newline Float64 \linebreak[1](max\_indices,\linebreak[1]nGranules)
+& \status{Incomplete.} \miss{units} $\to$ \guess{\texttt{"1"}}.
+& \texttt{long\_name="Index in the orbit's ny axis where this granule's first scan lands."} \\
+
+\texttt{orbit\_end\_index} \newline Float64 \linebreak[1](max\_indices,\linebreak[1]nGranules)
+& \status{Incomplete.} \miss{units} $\to$ \guess{\texttt{"1"}}.
+& \texttt{long\_name="Index in the orbit's ny axis where this granule's last scan lands."} \\
+\bottomrule
+\end{longtable}
+
+\section{Summary}\label{sec:summary}
+
+The orbit file \emph{looks} well annotated, and on the most
+important variables it largely is: the SST fields, the gradient
+fields, the lat/lon arrays, the scalar time, and the AMSR-E
+co-located fields all carry \texttt{long\_name},
+\texttt{standard\_name}, \texttt{\_FillValue}, \texttt{scale\_factor},
+\texttt{add\_offset}, and \texttt{valid\_min/valid\_max}. The
+COARDS audit nonetheless judges 23 of 44 variables incomplete,
+driven by three recurring issues:
+
+\begin{enumerate}
+  \item \textbf{Units string \texttt{"C"} / \texttt{"C/km"}.} Both
+    are non-UDUNITS. Substituting \texttt{degree\_Celsius} and
+    \texttt{degree\_Celsius km-1} on the affected 15 variables
+    would close most of the gap.
+  \item \textbf{Time variables without reference.}
+    \texttt{DateTime}, \texttt{start\_time},
+    \texttt{end\_time} all carry \texttt{units="seconds"} with the
+    epoch stated in the \texttt{long\_name} rather than the
+    \texttt{units} string. A COARDS-aware client cannot infer the
+    epoch from the units alone, so attempts to convert these to
+    Python \texttt{datetime} or \texttt{numpy.datetime64} via
+    standard tools may fail or silently produce wrong values.
+    Replacing the units string with
+    \texttt{"seconds since 1970-01-01 00:00:00 UTC"} (and adding
+    \texttt{calendar="gregorian"}) is a near-zero-cost fix.
+  \item \textbf{Dimensionless quantities with no units.} The
+    \texttt{region\_*}, \texttt{*\_index}, and flag arrays
+    declare no units. COARDS, and CF in particular, expects
+    \texttt{units="1"} for dimensionless quantities; this is
+    not optional.
+\end{enumerate}
+
+Independent of COARDS, the orbit file would be substantially
+easier to read and re-use with the following additions, listed in
+the per-variable tables:
+
+\begin{itemize}
+  \item \texttt{coordinates="latitude longitude DateTime"} on
+    every 2-D data variable in the root group (CF-1.x links
+    auxiliary coordinates to data variables this way).
+  \item \texttt{ancillary\_variables="qual\_sst refined\_mask"}
+    on every SST and gradient field.
+  \item \texttt{cell\_methods} on derived quantities: gradients
+    are differences, the regridded SST is a mean, the L2eqa fields
+    are means with companion count/std, etc.
+  \item Proper \texttt{flag\_values}/\texttt{flag\_meanings} on
+    \texttt{refined\_mask} and \texttt{qual\_sst}. The current
+    \texttt{flag\_masks=0} declaration is malformed and conveys
+    no useful information.
+  \item Instrument provenance: the AMSR-E retirement caveat is
+    only knowable to a reader who already knows when AMSR-E
+    stopped; a one-line \texttt{comment} on each AMSR-E variable
+    would resolve that.
+  \item Discovery attributes (\texttt{platform},
+    \texttt{instrument}, \texttt{processing\_level},
+    \texttt{product\_version},
+    \texttt{geospatial\_*}, \texttt{time\_coverage\_*},
+    \texttt{keywords}) at the root: standard ACDD additions that
+    any catalog scraper expects.
+\end{itemize}
+
+\section{Caveats}
+
+\begin{itemize}
+  \item The audit was carried out on a single orbit file (the
+    first orbit of 2024) chosen as representative; the
+    \texttt{date\_created} of this file is 2025-05-17. Earlier
+    reprocessings on the same server may carry slightly
+    different attribute sets.
+  \item This audit considers only the metadata. It does not
+    re-check the values themselves except to verify the three
+    cases where the declared units appear inconsistent with the
+    packed values (\texttt{L2eqa\_AMSR\_E\_wind\_speed=mm},
+    \texttt{L2eqa\_MODIS\_num\_SST=C}). Other ``Complete''
+    judgements in the tables do not certify that the values are
+    correct.
+  \item COARDS is, in 2026, a small standard; CF supersedes it
+    almost everywhere. Treating COARDS as the bar rather than CF
+    is generous; an equally-strict CF-1.8 audit would flag
+    everything COARDS flags here plus the missing
+    \texttt{coordinates}, \texttt{ancillary\_variables},
+    \texttt{cell\_methods}, and flag attributes listed in the
+    rightmost columns.
+\end{itemize}
+
+\end{document}

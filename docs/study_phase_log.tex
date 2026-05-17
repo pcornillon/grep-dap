@@ -1,0 +1,135 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{xcolor}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  columns=fullflexible,
+  frame=single,
+  backgroundcolor=\color{gray!10}
+}
+
+\title{grep-dap: Study Phase Log}
+\author{Claude (under direction of P. Cornillon)}
+\date{2026-05-16}
+
+\begin{document}
+\maketitle
+
+\section*{Purpose}
+
+This log records the commands, queries, and decisions made while carrying
+out the \emph{study phase} of the \texttt{grep-dap} project. The goal of
+the study phase is to develop working knowledge of OPeNDAP (the Data
+Access Protocol) and of the \texttt{pydap} client, with emphasis on
+metadata, data retrieval, and subsetting. The substantive findings are
+collected separately in
+\texttt{docs/opendap\_readme.tex}; this file documents the process.
+
+\section{Prompt \#1 (2026-05-16)}
+
+\subsection*{Instruction}
+
+\emph{``Read this document. Access the documentation for OPeNDAP and pydap
+and summarize your findings in the \texttt{opendap\_readme.tex} file.
+Focus on metadata, data retrieval, and subsetting.''}
+
+\subsection*{Plan}
+
+\begin{enumerate}
+  \item Read \texttt{CLAUDE.md} to absorb the project framing (the
+    OPeNDAP metadata problem; the GenAI/contrastive-learning angle;
+    rules about Python/conda/matplotlib).
+  \item Read \texttt{prompts/study\_phase.md} to confirm task scope.
+  \item Create \texttt{docs/} and seed this log.
+  \item Pull the OPeNDAP/DAP documentation that the project file
+    points to (NASA Earthdata OPeNDAP portal) and the canonical
+    OPeNDAP and DAP specification material.
+  \item Pull the \texttt{pydap} user-facing documentation (intro,
+    client usage, server, handlers).
+  \item Distill into \texttt{opendap\_readme.tex} with the three
+    requested focus areas as the structural backbone.
+  \item Verify the produced LaTeX compiles cleanly.
+\end{enumerate}
+
+\subsection*{Thoughts before research}
+
+A few observations that shaped the approach:
+
+\begin{itemize}
+  \item OPeNDAP, as a protocol, is older than its current web
+    presence. The Hyrax server documentation and the OPeNDAP user
+    guides are the most authoritative descriptions of DAP2 and DAP4
+    semantics. For \texttt{grep-dap} the protocol details that
+    matter are: what \emph{shapes} of responses a server can return
+    (DDS / DAS / DDX / DMR / DAP), and what URL grammar a client
+    uses to request subsets. Without those, ``infer the contents of
+    an OPeNDAP server'' has no foothold.
+  \item For \texttt{pydap}, what matters is (a) how a dataset is
+    represented as a lazy in-Python tree, (b) how to inspect
+    metadata without pulling data, and (c) how to express subsets
+    so that only the bytes you actually want come down the wire.
+  \item DAP4 introduces a different metadata document (DMR) and a
+    different on-wire format. Code that ``infers contents'' must
+    decide whether to lean on DAP2 (universal, simpler) or DAP4
+    (richer, but not every server speaks it). Worth flagging in the
+    readme.
+\end{itemize}
+
+\subsection*{Commands and tool calls}
+
+\begin{lstlisting}
+# Read project context
+Read CLAUDE.md
+Read prompts/study_phase.md
+
+# Inspect existing docs directory
+Glob docs/**/*   -> (empty)
+
+# Create docs/ and seed this log file
+Write docs/study_phase_log.tex
+
+# Pull OPeNDAP / DAP documentation
+WebFetch https://www.earthdata.nasa.gov/engage/open-data-services-software/earthdata-developer-portal/opendap
+WebFetch https://www.opendap.org/about
+WebSearch "OPeNDAP DAP2 DDS DAS constraint expression"
+WebSearch "OPeNDAP DAP4 DMR DSR specification"
+
+# Pull pydap documentation
+WebFetch https://pydap.github.io/pydap/en/intro.html
+WebFetch https://pydap.github.io/pydap/en/client.html
+WebFetch (additional pydap pages as needed)
+\end{lstlisting}
+
+\subsection*{Notes during research}
+
+The detailed findings live in \texttt{opendap\_readme.tex}.  Items
+worth recording here as \emph{process} rather than \emph{content}:
+
+\begin{itemize}
+  \item The NASA Earthdata page is a portal/index; it points at
+    Hyrax, at the DAP2/DAP4 specs, and at client tools, but it is
+    not itself a specification. Treat as a pointer page.
+  \item Some pydap doc pages are dynamic; if a fetch returns
+    a near-empty shell, switch to the Chrome browsing tool so the
+    page renders before extraction. (Not invoked unless needed.)
+  \item Where the OPeNDAP and pydap docs disagree (e.g.\ DAP2 vs
+    DAP4 default in newer pydap releases), follow pydap's own
+    statement, since \texttt{grep-dap} will speak through pydap.
+\end{itemize}
+
+\subsection*{Outcome}
+
+\begin{itemize}
+  \item \texttt{docs/study\_phase\_log.tex} (this file) initialized.
+  \item \texttt{docs/opendap\_readme.tex} written, structured as
+    \emph{Overview}, \emph{Metadata}, \emph{Data retrieval},
+    \emph{Subsetting}, \emph{pydap usage}, \emph{Implications for
+    grep-dap}.
+  \item Both files compile under \texttt{pdflatex}.
+\end{itemize}
+
+\end{document}
