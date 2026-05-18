@@ -48,7 +48,7 @@ If you will execute a series of Python commands, save them in a file named <scri
 
     Then, produce Latex doducments, one for each dataset, directed to the curators of the two datasets, describing what is missing related to the semantic metadata. These documents should be short and to the point.
     
-7. Reread this document and documentation produced while executing prompts 1-6 so that you are familiar with the work you have already completed related to this project.
+7. Reread this document and documentation produced while executing prompts 1-6 so that you are familiar with the work you have already completed related to this project. And then write a .tex file summarizing what was done and why. Call this file: project_summary.tex and put it in the top level of the repo. 
 
     
 
