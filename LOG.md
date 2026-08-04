@@ -83,3 +83,8 @@ the marker of a pre-convention entry.
   was found intact in `claude-config` and extracted here rather than invented, and
   re-verification killed three claims about `c260ef7` that had propagated into
   `TASKS.md` and `STATUS.md`
+- ★ **P3** `1621_satdat1` · 2026-08-04 16:41 EDT · confirm D6, commit and push, and make
+  the cross-repo log split a standing rule
+  → `169e68b` pushed here; `claude-config` D34 + `global/CLAUDE.md` rule 3 and a new
+  "One session, two repos" block (`273dec9`); its `STATUS.md` waiting-on-Peter table
+  drops to eight
