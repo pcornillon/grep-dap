@@ -87,3 +87,28 @@ here on 2026-08-04 so they stop living only inside documents. Each cites its sou
   contents of an OPeNDAP server."* When real package code appears it goes at the top
   level in a lowercase directory — `src/` or `grep_dap/` — and **not** into
   `ISSUE_ANALYSES/Python/`, which stays what it is: the probe drawer.
+
+### D6. Delete the `uri` branch — it held nothing `main` lacks
+- **Decision:** `origin/uri` was deleted on 2026-08-04 (`git push origin --delete
+  uri`). Its one commit is
+  **`c260ef7cab953fe2fb31a7912cf3c948b3935aef`** (2026-04-28), recorded here so the
+  branch can be recreated if the judgment below is ever doubted. Do not go looking for
+  work on that branch: there is none.
+- **Why:** the branch was made in April to localize the project onto Peter's machine
+  after the clone from `Sea-Meets-the-Stars`. It was pushed once and abandoned. Three
+  weeks later the same localization was done again on `main`, further and against the
+  current layout — `ISSUE_ANALYSES/` and `DOCS/` rather than the `MD/` folder `uri`
+  proposed, with prompts 2–8 written out where `uri` had commented 2–6 out. A
+  file-by-file comparison found **every** change on `c260ef7` superseded: the 12
+  script deletions (`main` keeps the scripts), the empty `MD/.gitkeep`, and both
+  prompt files. The rejected alternatives were merging it — which would have deleted
+  all 32 probe scripts and conflicted on every renamed path — and keeping it as a
+  historical marker, rejected because a divergent branch reads as unmerged work and
+  had already cost two sessions.
+- **Where:** nothing in the repository depends on it. `TASKS.md` #1;
+  `SESSIONS/2026-08-04_1527_EDT_satdat1.md`, whose corrections section holds the
+  verifying commands.
+- **Live tension:** the record of *why* the branch existed — what "running this from
+  URI" was meant to change about the run — is not recoverable from the repository, and
+  deleting the branch does not make it more so. If that intent mattered, it is in
+  Peter's memory, not in git.

@@ -14,33 +14,32 @@ before, so nothing done earlier is recorded here — `LOG.md` and
 
 ## Task #1 — Decide what happens to the `uri` branch
 
-**Status:** blocked (on Peter)
+**Status:** done (2026-08-04)
 
-`origin/uri` is **1 commit ahead of `main` and 3 behind**. The merge base is `07c10f9`
-(2026-04-15); the branch's one commit is `c260ef7` (2026-04-28) and `main` has three on
-top of the same base. Read from the branch, not recalled — `c260ef7`:
+**Resolved: the branch was deleted.** `git push origin --delete uri`, 2026-08-04
+16:25 EDT, on Peter's explicit instruction. Recorded as **D6**.
 
-- **deletes all 14 `.py` scripts that existed at the time** (1,480 lines);
-- adds an empty `MD/.gitkeep` and a `gradients_by_period_umm_c.json`;
-- edits both files in `prompts/`, per its message *"Updated the two prompt files for
-  running this from URI."*
+`origin/uri` was **1 commit ahead of `main` and 3 behind** — merge base `07c10f9`
+(2026-04-15), single commit `c260ef7` (2026-04-28). A file-by-file comparison found
+**nothing on it that `main` lacks**:
 
-Meanwhile `main` gained 18 more scripts, all of `docs/`, `project_summary.tex`, and now
-the restructure — which moved every path that branch touches.
+- it deleted 12 `.py` scripts — every one that existed at the merge base — which
+  `main` still has, now in `ISSUE_ANALYSES/Python/`;
+- it added an empty `MD/.gitkeep`, for a folder the restructure does not use;
+- it repointed both `prompts/` files at `/Users/petercornillon/…/MD/` and commented
+  out prompts 2–6. `main` re-did that localization independently and further, against
+  `ISSUE_ANALYSES/` and `DOCS/`, with prompts 2–8 written out in full.
 
-**Because it is a single stale commit, this is cheaper than it looks.** Three options:
+**Two claims in the original write-up of this task were wrong** and are corrected
+here. It said the branch deleted **14** scripts — it is 12 — and that it **added**
+`gradients_by_period_umm_c.json`. It did not: that file was already at the merge base,
+and `main` deleted it in `9776b97`. Since the JSON was the only content-bearing item
+behind the recommended option 2 ("cherry-pick then abandon"), there was in fact nothing
+to cherry-pick, and option 1 was correct. See the corrections section of
+`SESSIONS/2026-08-04_1527_EDT_satdat1.md` for the verifying commands.
 
-1. **Abandon it** — delete the branch. The `gradients_by_period_umm_c.json` and the
-   prompt-file edits are the only content on it that `main` does not have.
-2. **Cherry-pick then abandon** — take the JSON, re-apply the prompt edits onto the
-   restructured files by hand, then delete. **Cheapest of the three**, since there is
-   exactly one commit to mine.
-3. **Merge properly** — the expensive one: a conflict in both prompt files and a
-   delete/rename conflict on every script, for no content `main` lacks.
-
-**Nothing was done to it.** The restructure did not touch it, and this decision is
-Peter's: what that branch was *for* (running the case from a URI machine?) is not
-recoverable from the repository.
+**The commit is not lost.** `c260ef7cab953fe2fb31a7912cf3c948b3935aef` is recorded in
+D6; the branch can be recreated from it for as long as the object survives locally.
 
 ## Task #2 — Run prompt 8 of the URI test case
 

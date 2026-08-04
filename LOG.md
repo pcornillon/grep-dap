@@ -69,3 +69,17 @@ the marker of a pre-convention entry.
   → the five spine folders, `docs/` split into `DOCS/` + `ISSUE_ANALYSES/<issue>/`,
   32 scripts flattened into `ISSUE_ANALYSES/Python/`, six spine files written,
   `PRE_CONVERSION/CLAUDE.md`; D1–D5 drafted; Tasks #1–#5 opened
+
+## Branch reconciliation
+
+- **P1** `1621_satdat1` · 2026-08-04 16:21 EDT · what "`origin/uri` is 1 ahead, 3
+  behind" means, and which branch to work in
+  → `uri` is a single 2026-04-28 commit whose every change was superseded on `main`;
+  all proof-of-concept output lives on `main`. Recommended deleting `uri`; nothing
+  deleted yet
+- ★ **P2** `1621_satdat1` · 2026-08-04 16:24 EDT · execute the three asks — push `main`,
+  delete `uri`, reconstruct the missing restructure log
+  → `origin/uri` deleted (D6, Task #1 `done`); `a55f97b` pushed; the restructure log
+  was found intact in `claude-config` and extracted here rather than invented, and
+  re-verification killed three claims about `c260ef7` that had propagated into
+  `TASKS.md` and `STATUS.md`

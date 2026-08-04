@@ -1,7 +1,7 @@
 # STATUS.md — grep-dap
 
 Living snapshot of where the project stands. Rewritten, not appended.
-Last updated: **2026-08-04 15:27 EDT** (`satdat1`, during the spine restructure).
+Last updated: **2026-08-04 16:35 EDT** (`satdat1`).
 
 ---
 
@@ -72,17 +72,16 @@ about what was done, and rewriting them would falsify the record.
 
 ## Waiting on Peter
 
-- **Task #1 — the `uri` branch.** `origin/uri` is **1 commit ahead of `main` and 3
-  behind**, last touched 2026-04-28. That one commit **deletes every `.py` script that
-  existed then**, adds an empty `MD/` and a `gradients_by_period_umm_c.json`, and edits
-  both prompt files. The restructure has moved everything it touches. It was left
-  completely alone.
 - **Task #4 — is `project_summary.tex` a manuscript?** If it is headed for
-  publication rather than for a proposal, it belongs in `LATEX/`.
+  publication rather than for a proposal, it belongs in `LATEX/` rather than `DOCS/`.
+
+*(Task #1, the `uri` branch, was resolved on 2026-08-04 — deleted; see D6.)*
 
 ## Active thread — resume here
 
-**Nothing is in flight.** The restructure is committed here and **not pushed**.
+**Nothing is in flight.** The restructure (`a55f97b`) is committed **and pushed**;
+`main` and `origin/main` agree, and `main` is now the only branch — `uri` was deleted
+on 2026-08-04 (D6). There is no longer any divergence to reconcile.
 
 The next piece of project work is **Task #2 — prompt 8**, which is already written at
 the bottom of `prompts/test_case_uri.md` and has never been run. It asks for four
