@@ -1,0 +1,449 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{amsmath}
+\usepackage{booktabs}
+
+\emergencystretch=3em
+\tolerance=2000
+\sloppy
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  columns=fullflexible,
+  frame=single,
+  backgroundcolor=\color{gray!10},
+  showstringspaces=false
+}
+
+\title{\textbf{grep-dap}: Generative-AI assistance for validating and
+       enriching the semantic metadata of remote Earth-science
+       archives\\
+       \large project summary and case study}
+\author{P. Cornillon\\
+\small Graduate School of Oceanography, University of Rhode Island}
+\date{2026-05-18}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+NASA's Earth-science archives expose petabytes of remote-sensing
+and model data through OPeNDAP servers, but the \emph{semantic}
+metadata that tells a user what those data \emph{mean}---units,
+coordinates, provenance, processing history---varies enormously,
+from fully CF-compliant down to none at all. The
+\textbf{grep-dap} project explores how a generative-AI agent,
+disciplined by the OPeNDAP protocol and by direct statistical
+probing of the underlying data, can (a)~give archive curators a
+prioritised, evidence-backed punch list of what is missing or
+malformed in the metadata they are responsible for, and
+(b)~produce ``usage'' artefacts that let downstream users and
+their own AI agents work with the data even when the underlying
+metadata is incomplete. This document summarises a six-step
+proof-of-concept test case carried out against the URI OPeNDAP
+server at \texttt{sst-aqua.gso.uri.edu} (the AVHRR/MODIS SST-Fronts
+holdings), describes what the case shows is feasible, and frames
+the resulting capability as the basis for a NASA-scale curator-
+and-user support service.
+\end{abstract}
+
+\section{Motivation: a structural feature, not a defect, of OPeNDAP}
+
+OPeNDAP (the DAP protocol) was designed with deliberately
+asymmetric metadata: a rigid \emph{syntactic} structure (shapes,
+dtypes, dimensions, groups) and a virtually free \emph{semantic}
+structure (units, long names, standard names, provenance,
+references) \cite{dap4}. The asymmetry lowered the barrier for
+data providers to publish their holdings, at the cost of allowing
+the semantic side to vary from complete to absent across servers.
+In practice, this is exactly the distribution that one sees: a
+single OPeNDAP server can host both CF-1.x--compliant ``flagship''
+datasets and entirely silent derivative products in adjacent
+directories. The disparity is visible \emph{within} the
+17-directory URI server studied here.
+
+A consequence of that variability is that an analyst who wants to
+use a remote dataset must currently do, by hand, one of two
+things:
+\begin{itemize}[topsep=2pt]
+  \item Trust the producer's intent and proceed, risking silent
+    misinterpretation; or
+  \item Reverse-engineer the dataset's semantics from the
+    structural metadata, the file and directory naming, the
+    statistical structure of the data itself, and any sibling
+    datasets that happen to be better annotated.
+\end{itemize}
+The second path is what an experienced scientist does when they
+encounter an unfamiliar dataset. It is also exactly the kind of
+multi-modal, judgement-laden inspection at which contemporary
+GenAI agents have become surprisingly capable.
+
+\section{The grep-dap approach}\label{sec:approach}
+
+\textbf{grep-dap} treats an OPeNDAP endpoint as a probeable
+environment and an AI agent as a careful (sceptical, evidence-
+demanding) external reader. The agent's reasoning is anchored
+in three classes of evidence:
+
+\begin{enumerate}[leftmargin=2em,topsep=2pt]
+  \item \textbf{Catalog-level structure.} Directory names, file
+    naming conventions, and version tags. A name like
+    \texttt{AQUA\_MODIS\_orbit\_NNNNNN\_YYYYMMDDThhmmss\_L2\_SST-URI\_24-2.nc4}
+    encodes platform, instrument, orbit number, start time,
+    processing level, producer, and version without opening the
+    file.
+  \item \textbf{Structural metadata.} The DAP4 DMR (or DAP2
+    DDS+DAS), parsed depth-aware so that every group, dimension,
+    variable, dtype, shape, fill value, scale factor, and
+    declared attribute is captured.
+  \item \textbf{Data probes.} Small, deliberately chosen DAP
+    hyperslab requests that test specific hypotheses (for example,
+    ``is this variable in $^\circ$C?'', ``does lat run S--N or
+    N--S?'', ``what is the effective spatial support of this
+    derivative operator?''). These are the equivalent of a
+    senior scientist asking ``does the field actually look like
+    SST?'' before trusting anyone's metadata.
+\end{enumerate}
+
+The output of a grep-dap pass is not a single declarative answer
+but a structured judgement that distinguishes
+\emph{stated}, \emph{inferred}, and \emph{not safely guessable}
+items. Inferences are themselves graded by confidence (statistical
+support from data probes, naming-grammar regularity, sibling-
+dataset consistency) so that downstream consumers know which
+attributes are safe to act on automatically and which require
+producer confirmation.
+
+\section{The URI case study}\label{sec:case}
+
+The 2026 test case ran a six-prompt sequence against the URI
+OPeNDAP server at \texttt{https://sst-aqua.gso.uri.edu/opendap/}.
+The server hosts 17 top-level containers; only two are publicly
+readable (the remainder return Hyrax 403). All findings below
+are evidence-tracked and reproducible from the scripts in the
+project repository.
+
+\subsection{Mapping the server (Prompt~1)}
+
+The agent walked the root catalog, identified the server software
+(Hyrax behind \texttt{nginx}, DAP2 + DAP4 both advertised),
+classified all 17 directory names into thematic groups (sensor
+sources \texttt{JAXA\_Orbits}, \texttt{RSS\_Orbits}, \texttt{MUR};
+in-situ \texttt{iQuamBuoy}; matchups \texttt{matchups\_v2}
+and \texttt{matchups\_v3};
+time series \texttt{timeSeries\_v2}; gradient products
+\texttt{gradients\_by\_period} and
+\texttt{gradients\_by\_period\_5day}; orbit files
+\texttt{SST\_Orbits}), and successfully read the two public
+branches end-to-end. A key observation already at this step: a
+forbidden directory's \emph{name} is still useful semantic signal
+that catalog-level inference should not discard.
+
+\subsection{COARDS audit of a well-annotated dataset (Prompt~2)}
+
+For the CF-1.5--labelled \texttt{SST\_Orbits/} branch, the agent
+parsed the DMR of a representative file into a complete inventory
+(3 groups, 3 + 6 + 3 dimensions, 44 atomic variables, 22
+root-group attributes) and scored each variable against a
+deliberately strict reading of COARDS. Of 44 variables, 21 were
+COARDS-complete and 23 were not, with three recurring issues that
+accounted for almost all of the gap:
+
+\begin{itemize}[topsep=2pt]
+  \item Non-UDUNITS unit strings (\texttt{units="C"},
+    \texttt{units="C/km"}) on 15 variables; one substitution per
+    variable resolves them.
+  \item Three time variables (\texttt{DateTime}, two
+    \texttt{*\_time} in the \texttt{/contributing\_granules/}
+    group) declaring \texttt{units="seconds"} without an epoch
+    reference.
+  \item Dimensionless quantities (region indices, granule indices)
+    with no \texttt{units} attribute at all.
+\end{itemize}
+
+The agent additionally identified two factually wrong unit
+declarations buried in a sub-group (\texttt{L2eqa\_AMSR\_E\_wind\_speed}
+declared \texttt{units="mm"}; \texttt{L2eqa\_MODIS\_num\_SST}
+declared \texttt{units="C"} on a pixel count), each by comparing
+the declared units with the packed value range and with the
+sibling variables' units. These would have been hard for a
+human-only review to find at scale.
+
+For each affected variable the audit emitted a proposed value
+and the evidence that supports it; for each variable, the audit
+\emph{also} suggested non-COARDS attributes (\texttt{coordinates},
+\texttt{ancillary\_variables}, \texttt{cell\_methods},
+\texttt{flag\_values}/\texttt{flag\_meanings}) that would
+significantly aid interpretation. Two factual errors in an
+earlier exploratory pass (Prompt~1) were caught and explicitly
+corrected as part of the audit.
+
+\subsection{Recovering semantics for a zero-metadata dataset (Prompt~3)}
+
+The \texttt{gradients\_by\_period/} branch (270 monthly NetCDF
+files of statistics over MODIS-Aqua SST and SST gradients,
+2003--2024, on a $1^\circ \times 1^\circ$ global grid) carries
+\emph{zero} attributes: no \texttt{units}, no
+\texttt{long\_name}, no \texttt{\_FillValue}, no coordinate
+variables, no global attributes. This is the OPeNDAP free-for-all
+that motivates grep-dap.
+
+The agent recovered the dataset's semantics by combining three
+independent lines of evidence:
+
+\begin{enumerate}[topsep=2pt]
+  \item \textbf{Variable-name grammar} (e.g.\ the regular structure
+    \texttt{\{day,night\}\_sum\_\{SST,\dots\}\_squared} implying
+    a sum + sum-of-squares + count bookkeeping scheme).
+  \item \textbf{Sibling-dataset inheritance} (the sibling
+    \texttt{SST\_Orbits/} declares the gradient variables in
+    $^\circ$C/km; the gradient sums in this dataset inherit
+    those units).
+  \item \textbf{Direct geographic probes} (classifying six known-
+    land and six known-ocean points against the
+    \texttt{day\_pixel\_count} field. Only one of the four
+    candidate lat/lon conventions gets all 12 correct, giving
+    \texttt{lat[k] = -89.5 + k} (south-to-north) and
+    \texttt{lon[k] = -179.5 + k} ($-180\to+180$) unambiguously).
+\end{enumerate}
+
+The audit was organised as a $3 \times 2$ matrix:
+inference confidence (\emph{very confident} / \emph{guessed} /
+\emph{will not guess}) crossed with importance (\emph{essential} /
+\emph{nice-to-have}). This explicitly classifies which inferred
+attributes the agent is willing to write back into a re-published
+file and which it refuses to fabricate.
+
+\subsection{Estimating the physical scale of a derived product (Prompt~4)}
+
+For the gradient product, the agent estimated the \emph{spatial
+range over which a single gradient value was computed} (the
+support of the differentiation operator in the upstream L2 swath)
+by three independent methods:
+\begin{itemize}[topsep=2pt]
+  \item Pixel-count ratios (the \texttt{at\_pixel\_count} /
+    \texttt{pixel\_count} ratio is sensitive to scan-boundary
+    masking of the gradient stencil, fixing the operator half-
+    width at $\sim$2 pixels).
+  \item Magnitude-RMSE matching against centered differences of
+    the masked SST field at multiple scales (RMSE minimum at $h=3$
+    pixels, support $\sim$6\,km).
+  \item Autocorrelation of the stored gradient field
+    (decorrelation length $\sim$2--3\,km).
+\end{itemize}
+All three converge on $5 \pm 2$\,km, an estimate that no part of
+the file's declared metadata supplies but that is essential for
+anyone using the data in a quantitative model. The agent recorded
+the estimate along with what the analysis explicitly cannot
+resolve (the precise functional form of the operator; whether
+upstream SST smoothing was applied in addition to masking).
+
+\subsection{Producing user-facing artefacts (Prompts~5--6)}
+
+Three classes of artefact were produced from the audits:
+
+\begin{itemize}[topsep=2pt]
+  \item \textbf{User-facing dataset descriptions.} Short, accessible
+    overviews of each dataset for a working scientist deciding
+    whether the data fit a need, including a 15-line code snippet
+    for a subset and an explicit ``honest limitations'' list.
+  \item \textbf{Agent-facing usage files} (\texttt{usage\_sst.md},
+    \texttt{usage\_gradient\_SST.md}). Self-contained Markdown
+    guides intended to be handed to a downstream AI agent or
+    pipeline. They are written in a form an LLM agent can act on
+    directly: server endpoint, access pattern, variable inventory
+    with all inferences marked, code recipes for the common cases,
+    and a numbered list of pitfalls. The headline code examples
+    were verified against the live server in a sanity-test run.
+  \item \textbf{Curator-facing letters} (one per dataset). Short
+    (1--2 pages), prioritised punch-lists of metadata gaps,
+    written in the language a producing scientist would expect:
+    explicit attribute name, proposed value, evidence, and a
+    link back to the deeper audit. The CF-compliant dataset's
+    letter is mostly small unit-string substitutions; the
+    zero-metadata dataset's letter splits into ``what can be
+    confidently encoded'' and ``what only the producer can
+    supply'' (date\_created, processing history, exact upstream
+    algorithm).
+\end{itemize}
+
+\section{Capabilities the test case demonstrates}\label{sec:caps}
+
+The URI test case exercises six capabilities that an automated
+service would need at scale:
+
+\begin{enumerate}[leftmargin=2em,topsep=2pt]
+  \item \textbf{Catalog walking with permission-aware harvesting.}
+    A grep-dap agent must extract signal from directory names it
+    cannot read, and must not penalise a curator for having
+    private holdings on the same server.
+  \item \textbf{Depth-aware DMR parsing.} Hyrax/THREDDS DMR XML
+    has nested groups; a naive flat-regex parser (as I used in
+    Prompt~1) silently misses both global attributes and the
+    full per-variable attribute set. A first-class agent uses a
+    proper namespace- and depth-aware parser, and re-runs prior
+    inferences when corrected.
+  \item \textbf{Inference under confidence.} Each proposed
+    attribute is tagged with the type of evidence that supports
+    it; the agent refuses to fabricate items it cannot defend
+    (\texttt{date\_created}, \texttt{history}, the exact form of
+    a black-box operator).
+  \item \textbf{Cross-dataset reasoning.} The agent uses better-
+    annotated sibling datasets on the same server (here:
+    \texttt{SST\_Orbits/} informing \texttt{gradients\_by\_period/})
+    as a primary inference source. Many archive layouts share
+    this property.
+  \item \textbf{Quantitative inference from data probes.} The
+    spatial-scale estimation in Prompt~4 is a small example of a
+    much larger class: physically meaningful quantities
+    (resolution, decorrelation lengths, noise floor, latency,
+    diurnal/seasonal cycle phase) that can be estimated from
+    cheap DAP hyperslab requests.
+  \item \textbf{Producing distinct artefacts for distinct
+    audiences.} A curator wants a punch list; a user wants a
+    pre-flight summary plus working code; an LLM agent wants a
+    machine-readable usage file. The same audit drives all three.
+\end{enumerate}
+
+\section{Implications for a NASA-scale service}\label{sec:nasa}
+
+NASA's Earthdata catalog spans dozens of DAACs and thousands of
+collections served via OPeNDAP-compatible endpoints (Hyrax,
+THREDDS, ERDDAP). The variability documented within one URI
+server is, anecdotally, mirrored across the system. A grep-dap--
+like service offered to curators and users at NASA scale could:
+
+\begin{itemize}[topsep=2pt]
+  \item \textbf{Continuously audit} every collection's DMR against
+    CF, COARDS, and ACDD requirements, with prioritisation tuned
+    to the discipline (e.g.\ flag missing time epochs and
+    coordinate variables harder than missing \texttt{keywords}).
+  \item \textbf{Cross-link related datasets.} Inheritance from
+    well-annotated to thinly-annotated companions is a powerful
+    inference channel that no single-file validator currently
+    uses. NASA holdings, with their explicit collection-of-
+    granules structure, are particularly amenable to this.
+  \item \textbf{Estimate physical quantities by data probing.}
+    For derived products, the producer's chosen resolution,
+    operator support, and noise floor are often not
+    documented---and yet are essential for the user to decide
+    whether the data fit a science question. Cheap, principled
+    probing can recover these.
+  \item \textbf{Generate dual-audience artefacts.} A weekly
+    pull-request--style notification to curators (``these three
+    attributes were either malformed or missing on collection X
+    last week; here are the proposed fixes; click `Accept' to
+    push the change to the producing script'') paired with
+    public, machine-readable usage documents (regenerated
+    automatically as collections change) would close the loop.
+  \item \textbf{Provide an evidence trail.} Every proposed change
+    or inference is tied to the structural feature, naming
+    grammar item, or data probe that supports it; nothing is
+    fabricated. That property is the project's main scientific
+    discipline and a precondition for trust in an automated
+    metadata system.
+\end{itemize}
+
+\section{Limitations and open questions}\label{sec:limits}
+
+The URI case study is deliberately small in scope, and the
+generalisations above must be tested rather than assumed.
+
+\begin{itemize}[topsep=2pt]
+  \item \textbf{Sample size.} A single 2-readable-directory server
+    is not a representative sample of NASA archives. Scaling
+    requires running grep-dap across a stratified sample of DAACs
+    (PO.DAAC, GES~DISC, NSIDC, ASDC, LP~DAAC, etc.) and
+    quantifying the audit error rate against curator review.
+  \item \textbf{Agent reliability.} Two factual errors in Prompt~1
+    of the case study (a missed root-attribute set and a missed
+    scale factor) were caught and corrected in Prompt~2. A
+    deployable service must have automatic correction loops and
+    independent re-runs as a built-in feature.
+  \item \textbf{Producer overhead.} The curator-facing letter is
+    intentionally short, but pushing it into producers' actual
+    workflows (notebooks, processing scripts, configuration
+    files) requires integration with their tooling. Designing
+    that interface --- and especially the ``one-click accept''
+    pull-request workflow --- is itself non-trivial.
+  \item \textbf{Authentication.} 14 of 17 directories on the URI
+    server are 403 from a public client. NASA Earthdata's
+    \texttt{urs.earthdata.nasa.gov} login provides an obvious
+    authentication path for a service that operates on behalf of
+    the archive owner; an external-only auditor would not see
+    those collections at all.
+  \item \textbf{Failure modes of GenAI on metadata.} An agent that
+    cheerfully fabricates a plausible \texttt{date\_created} or
+    \texttt{processing\_history} is worse than no audit at all.
+    The strict confidence-classification of inferences is one
+    line of defence; explicit refusal-to-guess for unsupported
+    fields is another. Both need empirical evaluation.
+\end{itemize}
+
+\section{Proposed next steps}\label{sec:next}
+
+Three immediate extensions of the URI proof-of-concept would
+position the work for a NASA-scale follow-on:
+
+\begin{enumerate}[topsep=2pt,leftmargin=2em]
+  \item \textbf{Multi-DAAC pilot.} Run grep-dap against one
+    representative collection from each of three contrasting
+    DAACs (e.g.\ PO.DAAC L2 SST, GES~DISC GPM L3, NSIDC sea-ice
+    L4). Compare the audit output against curator review and
+    quantify precision/recall on (i) flagged COARDS issues and
+    (ii) proposed attribute values.
+  \item \textbf{Producer-loop integration.} Build a prototype
+    that issues GitHub-style pull requests against the producing
+    repositories for a small number of cooperating curators,
+    closing the loop from external audit to in-source attribute
+    change.
+  \item \textbf{User-facing usage-doc service.} Auto-generate
+    \texttt{usage\_*.md} files for every audited collection and
+    expose them through a simple discovery interface. Measure
+    user-task success rates (e.g.\ time to first working
+    subsetting query) with and without the usage doc.
+\end{enumerate}
+
+\section{Reproducibility}\label{sec:repro}
+
+All artefacts of the URI case study are checked into the
+\texttt{grep-dap} repository:
+
+\begin{itemize}[topsep=2pt]
+  \item \texttt{docs/uri\_test\_case\_\{1\dots5\}.tex} --- the
+    audit reports for each prompt.
+  \item \texttt{docs/test\_case\_uri\_log\_\{1\dots6\}.tex} ---
+    the timestamped working logs.
+  \item \texttt{docs/curator\_report\_sst\_orbits.tex},
+    \texttt{docs/curator\_report\_gradients\_by\_period.tex} ---
+    the two curator letters.
+  \item \texttt{docs/usage\_sst.md},
+    \texttt{docs/usage\_gradient\_SST.md} --- the agent-facing
+    usage documents.
+  \item \texttt{scripts/*.py} --- the probe scripts (catalog
+    walk, DMR parser, COARDS scorer, geographic-orientation
+    test, gradient-scale estimators, usage sanity tests).
+\end{itemize}
+
+Each artefact links to the scripts and inputs that produced it,
+so any claim in the audits can be re-verified by re-running
+against the live server.
+
+\begin{thebibliography}{9}
+\bibitem{dap4} Unidata and OPeNDAP, Inc., ``DAP4 Specification,''
+  2016. \url{https://opendap.github.io/dap4-specification/DAP4.html}
+\bibitem{cf18} CF Conventions and Metadata, version 1.8,
+  \url{https://cfconventions.org/}
+\bibitem{acdd} Unidata, ``Attribute Convention for Data
+  Discovery,'' v1.3,
+  \url{https://wiki.esipfed.org/Attribute_Convention_for_Data_Discovery_1-3}
+\bibitem{earthdata} NASA Earthdata,
+  \url{https://earthdata.nasa.gov/}
+\end{thebibliography}
+
+\end{document}

@@ -1,0 +1,122 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{amsmath}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  columns=fullflexible,
+  frame=single,
+  backgroundcolor=\color{gray!10},
+  showstringspaces=false
+}
+
+\title{URI OPeNDAP Test Case: Working Log (Prompt \#7)}
+\author{Compiled for P. Cornillon}
+\date{2026-05-18}
+
+\begin{document}
+\maketitle
+
+\section*{Purpose}
+
+Working log for Prompt~\#7: write a proposal-grade summary of the
+\texttt{grep-dap} test case and place it at the top of the project
+repository, in a form that could feed a NASA Earth-science archive
+metadata-validation proposal.
+
+\section{Prompt \#7 (2026-05-18 21:57 UTC)}
+
+\subsection{Instruction}
+
+\emph{``Reread this document and documentation produced while
+executing prompts 1--6 so that you are familiar with the work you
+have already completed related to this project. Then write
+\texttt{project\_summary.tex}, a \texttt{.tex} file summarising
+what was done and why, and put the file in the top level of the
+project. This file should be written in such a way that it could
+be used as the basis for a portion of a proposal related to this
+approach to help curators of NASA Earth Science archives to
+validate and update the metadata of archives for which they are
+responsible as well as to facilitate the use of these archives by
+the research community.''}
+
+\subsection{Drafting choices}
+
+\paragraph{Location and naming.} Per the instruction the document
+lives at the top level of the repository, not in
+\texttt{docs/}: \texttt{/project\_summary.tex}.
+
+\paragraph{Audience and tone.} The audience is a proposal
+reviewer (or someone writing a section of a proposal). The tone
+is therefore more declarative than the per-prompt reports: it
+asserts what \texttt{grep-dap} demonstrates and what an extension
+would do, rather than walking through the methodology a step at a
+time. The detailed per-prompt write-ups in \texttt{docs/} carry
+the methodology.
+
+\paragraph{Structure.} The document follows a familiar
+proposal-section progression:
+\begin{enumerate}
+  \item Abstract.
+  \item Motivation: OPeNDAP's deliberate asymmetric metadata
+    design, and the user / curator burden it creates.
+  \item The grep-dap approach: three classes of evidence
+    (catalog, structural, data probes); confidence-tagged
+    inference; explicit refusal-to-guess.
+  \item The URI case study (six subsections, one per prompt).
+  \item Capabilities the case study demonstrates (six explicit
+    capabilities).
+  \item Implications for a NASA-scale service (catalog audit,
+    cross-link inheritance, data-probe physical inference,
+    dual-audience artefacts, evidence trail).
+  \item Limitations and open questions (sample size, agent
+    reliability, producer overhead, authentication, GenAI
+    failure modes).
+  \item Proposed next steps (multi-DAAC pilot,
+    producer-loop integration, user-facing usage-doc service).
+  \item Reproducibility (pointer to repository contents).
+\end{enumerate}
+
+\paragraph{Two errors from Prompt~1 are surfaced explicitly} in
+the case-study section as a feature of the approach, not a
+defect: a deployable service must catch and correct its own
+prior inferences. Surfacing the corrections is a key part of the
+trust argument for an automated audit service.
+
+\paragraph{Claims I avoided making.}
+\begin{itemize}
+  \item No claim about NASA archive metadata distribution at
+    scale; I only claim that the URI server documents a clear
+    within-server bimodal distribution.
+  \item No claim about specific NASA solicitations or programs.
+  \item No claim about LLM model identity or performance
+    benchmarks; the focus is on the methodology of how an agent
+    is disciplined by data probes, not on which model is doing
+    the inference.
+\end{itemize}
+
+\subsection{Deliverables}
+
+\begin{itemize}
+  \item \texttt{project\_summary.tex} --- the new top-level
+    proposal summary.
+  \item \texttt{docs/test\_case\_uri\_log\_7.tex} --- this log.
+\end{itemize}
+
+\subsection{Commands}
+
+\begin{lstlisting}
+pdflatex project_summary.tex
+pdflatex test_case_uri_log_7.tex
+\end{lstlisting}
+
+\subsection{Session timing}
+
+Started 2026-05-18 21:57\,UTC. Closed log 2026-05-18
+$\sim$22:30\,UTC.
+
+\end{document}

@@ -48,9 +48,14 @@ If you will execute a series of Python commands, save them in a file named <scri
 
     Then, produce Latex doducments, one for each dataset, directed to the curators of the two datasets, describing what is missing related to the semantic metadata. These documents should be short and to the point.
     
-7. Reread this document and documentation produced while executing prompts 1-6 so that you are familiar with the work you have already completed related to this project. And then write a .tex file summarizing what was done and why. Call this file: project_summary.tex and put it in the top level of the repo. 
-
+7. Reread this document and documentation produced while executing prompts 1-6 so that you are familiar with the work you have already completed related to this project. Then write project_summary.tex, a .tex file summarizing what was done and why, and put the file in the top level of the project. This file should be written in such a way that it could be used as the basis for a portion of a proposal related to this approach to help curators of NASA Earth Science archives to validate and update the metadata of archives for which they are responsible as well as to facilitate the use of these archives by the research community.
     
+8. Reread this document and the documentation you have generated. There are a few issues, which need to be addressed: 
+a) You did not address the metadata for the latitude and longitude of the L2eqa fields in the SST\_Orbits\_dataset. Please do so. 
+b) I would like you to take a stab at how fields in the L2eqa\_grid, in the SST\_Orbits dataset, were constructed.
+c) I would like you to take a stab at identifying the origin of the fields, which were summed for the gradients\_by\_period dataset. 
+d) When you have completed the above, write updated, \_2, versions of project\_summary.tex, curator\_report\_gradients\_by\_period.tex, curator\_report\_sst\_orbits.tex, usage\_gradient\_SST.md and usage\_sst.md in addition to the appropriate test\_case\_uri\_log\_7.tex file.
+e) Finally, delete all \*.aux, \*.log and \*.out files in the project but be careful not to delete the test\_case\_uri\_log\_\*.tex and test\_case\_uri\_log\_\*.pdf files.
 
 <!-- 4. Now, reread this document and documentation produced while executing prompts 1-3 so that you are familiar with the work you have already completed related to this project.
  
