@@ -415,19 +415,25 @@ All artefacts of the URI case study are checked into the
 \texttt{grep-dap} repository:
 
 \begin{itemize}[topsep=2pt]
-  \item \texttt{docs/uri\_test\_case\_\{1\dots5\}.tex} --- the
-    audit reports for each prompt.
-  \item \texttt{docs/test\_case\_uri\_log\_\{1\dots6\}.tex} ---
-    the timestamped working logs.
-  \item \texttt{docs/curator\_report\_sst\_orbits.tex},
-    \texttt{docs/curator\_report\_gradients\_by\_period.tex} ---
+% The paths in this list were updated on 2026-08-04, when the repository was
+% restructured to the project spine: docs/ was split into DOCS/ (standing
+% reference) and ISSUE_ANALYSES/<issue>/ (investigation output), and scripts/
+% became ISSUE_ANALYSES/Python/.  Only this list was rewritten; the rest of
+% the document stands as written on 2026-05-18.
+  \item \texttt{ISSUE\_ANALYSES/uri\_test\_case/uri\_test\_case\_\{1\dots5\}.tex}
+    --- the audit reports for each prompt.
+  \item \texttt{ISSUE\_ANALYSES/uri\_test\_case/test\_case\_uri\_log\_\{1\dots6\}.tex}
+    --- the timestamped working logs.
+  \item \texttt{ISSUE\_ANALYSES/uri\_test\_case/curator\_report\_sst\_orbits.tex},
+    \texttt{\dots/curator\_report\_gradients\_by\_period.tex} ---
     the two curator letters.
-  \item \texttt{docs/usage\_sst.md},
-    \texttt{docs/usage\_gradient\_SST.md} --- the agent-facing
+  \item \texttt{ISSUE\_ANALYSES/uri\_test\_case/usage\_sst.md},
+    \texttt{\dots/usage\_gradient\_SST.md} --- the agent-facing
     usage documents.
-  \item \texttt{scripts/*.py} --- the probe scripts (catalog
-    walk, DMR parser, COARDS scorer, geographic-orientation
-    test, gradient-scale estimators, usage sanity tests).
+  \item \texttt{ISSUE\_ANALYSES/Python/*.py} --- the probe scripts
+    (catalog walk, DMR parser, COARDS scorer,
+    geographic-orientation test, gradient-scale estimators, usage
+    sanity tests).
 \end{itemize}
 
 Each artefact links to the scripts and inputs that produced it,

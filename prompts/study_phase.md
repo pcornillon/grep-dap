@@ -8,9 +8,9 @@ Learn about OPeNDAP and pydap.
 
 # Overleaf
 
-Make a log of any of your commands and of your thoughts in a file named study\_phase\_log.tex in the ~/Git\_Repos/grep-dap/docs/ directory.
+Make a log of any of your commands and of your thoughts in a file named study\_phase\_log.tex in the ~/Git\_Repos/grep-dap/ISSUE\_ANALYSES/study\_phase/ directory.
 
-Generate a standlone LateX file named opendap\_readme.tex in the~/Git\_Repos/grep-dap/docs/ directory that describes your findings.
+Generate a standlone LateX file named opendap\_readme.tex in the ~/Git\_Repos/grep-dap/DOCS/ directory that describes your findings.
 
 ## Prompts
 

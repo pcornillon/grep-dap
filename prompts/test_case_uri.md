@@ -9,17 +9,17 @@ Perform an exploratory analysis of data in a URI OPeNDAP server.  Use this URL t
 # Additional context
 
 This document contains information about OPeNDAP and pydap:
-~/Git\_Repos/grep-dap/docs/opendap\_readme.tex
+~/Git\_Repos/grep-dap/DOCS/opendap\_readme.tex
 
 # Latex
 
-Make a log of any of your commands and of your thoughts in a Latex file named test\_case\_uri\_log\_prompt\_#.tex in the ~/Git\_Repos/grep-dap/docs/ directory, where # is the number of the prompt in the test\_case\_uri.md file .  Be sure to add a timestamp any time (including time of day) that you add a new section to the log.
+Make a log of any of your commands and of your thoughts in a Latex file named test\_case\_uri\_log\_prompt\_#.tex in the ~/Git\_Repos/grep-dap/ISSUE\_ANALYSES/uri\_test\_case/ directory, where # is the number of the prompt in the test\_case\_uri.md file .  Be sure to add a timestamp any time (including time of day) that you add a new section to the log.
 
-Generate a standlone LateX file named uri\_test\_case\_prompt\_#.tex in the ~/Git\_Repos/grep-dap/docs/ directory that describes your findings.
+Generate a standlone LateX file named uri\_test\_case\_prompt\_#.tex in the ~/Git\_Repos/grep-dap/ISSUE\_ANALYSES/uri\_test\_case/ directory that describes your findings.
 
 # Scripts
 
-If you will execute a series of Python commands, save them in a file named <script\_name>.py in the ~/Git\_Repos/grep-dap/scripts/ directory.
+If you will execute a series of Python commands, save them in a file named <script\_name>.py in the ~/Git\_Repos/grep-dap/ISSUE\_ANALYSES/Python/ directory.
 
 
 # Prompts
