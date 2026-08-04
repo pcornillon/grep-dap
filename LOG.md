@@ -88,3 +88,11 @@ the marker of a pre-convention entry.
   → `169e68b` pushed here; `claude-config` D34 + `global/CLAUDE.md` rule 3 and a new
   "One session, two repos" block (`273dec9`); its `STATUS.md` waiting-on-Peter table
   drops to eight
+- **P4** `1621_satdat1` · 2026-08-04 ~16:44 EDT · "D23 for which project?" — three repos
+  have one; the one in play is `claude-config`'s
+  → nothing edited
+- **P5** `1621_satdat1` · 2026-08-04 ~16:47 EDT · widen D23, with Peter's doubt about
+  how much it matters now that the migrations are nearly done
+  → `claude-config` D23 rewritten around `mkdir -p`'s exit-0 failure, plus a bullet
+  recording that doubt; `99cd2f0`. Two invented timestamps corrected in this session's
+  log
