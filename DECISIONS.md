@@ -1,4 +1,4 @@
-# DECISIONS.md — grep-dap
+# DECISIONS.md — `grep-dap`
 
 Numbered design decisions, with rationale, so a future session does not relitigate a
 settled choice or misread a deliberate one as an oversight.

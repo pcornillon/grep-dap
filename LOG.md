@@ -1,4 +1,4 @@
-# LOG.md — grep-dap
+# LOG.md — `grep-dap`
 
 One line per prompt, append-only, chronological. `★` marks a substantive entry.
 A `## <theme>` heading appears when the topic shifts; entries append under the

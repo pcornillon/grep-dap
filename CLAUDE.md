@@ -1,4 +1,4 @@
-# CLAUDE.md — grep-dap
+# CLAUDE.md — `grep-dap`
 
 **What:** an experiment in using a GenAI agent to infer, verify and document the
 semantic metadata of an OPeNDAP archive.

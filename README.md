@@ -1,4 +1,4 @@
-# grep-dap
+# `grep-dap`
 
 **A system to learn what is inside an existing OPeNDAP repository when the repository
 will not say.**

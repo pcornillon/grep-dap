@@ -1,4 +1,4 @@
-# TASKS.md — grep-dap
+# TASKS.md — `grep-dap`
 
 Numbered work list. Appended, never renumbered; a task is never reopened — a follow-on
 change is a new task that references the old one.

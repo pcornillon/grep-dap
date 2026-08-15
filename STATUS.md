@@ -1,4 +1,4 @@
-# STATUS.md — grep-dap
+# STATUS.md — `grep-dap`
 
 Living snapshot of where the project stands. Rewritten, not appended.
 Last updated: **2026-08-04 16:35 EDT** (`satdat1`).
