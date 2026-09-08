@@ -64,7 +64,7 @@ the marker of a pre-convention entry.
 
 ## Restructure to the spine
 
-- ★ **P1** `1527_satdat1` · 2026-08-04 15:27 EDT · clone `pcornillon/grep-dap` on
+- ★ **P1** [`1527_satdat1`](SESSIONS/2026-08-04_1527_EDT_satdat1.md) · 2026-08-04 15:27 EDT · clone `pcornillon/grep-dap` on
   `satdat1` and restructure it to the standard
   → the five spine folders, `docs/` split into `DOCS/` + `ISSUE_ANALYSES/<issue>/`,
   32 scripts flattened into `ISSUE_ANALYSES/Python/`, six spine files written,
@@ -72,26 +72,26 @@ the marker of a pre-convention entry.
 
 ## Branch reconciliation
 
-- **P1** `1621_satdat1` · 2026-08-04 16:21 EDT · what "`origin/uri` is 1 ahead, 3
+- **P1** [`1621_satdat1`](SESSIONS/2026-08-04_1621_EDT_satdat1.md) · 2026-08-04 16:21 EDT · what "`origin/uri` is 1 ahead, 3
   behind" means, and which branch to work in
   → `uri` is a single 2026-04-28 commit whose every change was superseded on `main`;
   all proof-of-concept output lives on `main`. Recommended deleting `uri`; nothing
   deleted yet
-- ★ **P2** `1621_satdat1` · 2026-08-04 16:24 EDT · execute the three asks — push `main`,
+- ★ **P2** [`1621_satdat1`](SESSIONS/2026-08-04_1621_EDT_satdat1.md) · 2026-08-04 16:24 EDT · execute the three asks — push `main`,
   delete `uri`, reconstruct the missing restructure log
   → `origin/uri` deleted (D6, Task #1 `done`); `a55f97b` pushed; the restructure log
   was found intact in `claude-config` and extracted here rather than invented, and
   re-verification killed three claims about `c260ef7` that had propagated into
   `TASKS.md` and `STATUS.md`
-- ★ **P3** `1621_satdat1` · 2026-08-04 16:41 EDT · confirm D6, commit and push, and make
+- ★ **P3** [`1621_satdat1`](SESSIONS/2026-08-04_1621_EDT_satdat1.md) · 2026-08-04 16:41 EDT · confirm D6, commit and push, and make
   the cross-repo log split a standing rule
   → `169e68b` pushed here; `claude-config` D34 + `global/CLAUDE.md` rule 3 and a new
   "One session, two repos" block (`273dec9`); its `STATUS.md` waiting-on-Peter table
   drops to eight
-- **P4** `1621_satdat1` · 2026-08-04 ~16:44 EDT · "D23 for which project?" — three repos
+- **P4** [`1621_satdat1`](SESSIONS/2026-08-04_1621_EDT_satdat1.md) · 2026-08-04 ~16:44 EDT · "D23 for which project?" — three repos
   have one; the one in play is `claude-config`'s
   → nothing edited
-- **P5** `1621_satdat1` · 2026-08-04 ~16:47 EDT · widen D23, with Peter's doubt about
+- **P5** [`1621_satdat1`](SESSIONS/2026-08-04_1621_EDT_satdat1.md) · 2026-08-04 ~16:47 EDT · widen D23, with Peter's doubt about
   how much it matters now that the migrations are nearly done
   → `claude-config` D23 rewritten around `mkdir -p`'s exit-0 failure, plus a bullet
   recording that doubt; `99cd2f0`. Two invented timestamps corrected in this session's
